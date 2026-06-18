@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendSubscriptionReminders, sendStudentFeeReminders } from "@/actions/subscription-reminders";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   // Protect with secret header
   const authHeader = req.headers.get("authorization");
