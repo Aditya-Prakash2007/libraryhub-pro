@@ -1,0 +1,667 @@
+// LibraryHub Pro - Complete Prisma Schema for MongoDB
+// Multi-tenant SaaS Library Seat Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  SUPER_ADMIN
+  LIBRARY_ADMIN
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum SeatStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+}
+
+enum SeatType {
+  STANDARD
+  PREMIUM
+  WINDOW
+  CORNER
+  POWER_OUTLET
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  FAILED
+  REFUNDED
+  PARTIAL
+}
+
+enum PaymentMode {
+  RAZORPAY
+  CASH
+  BANK_TRANSFER
+  UPI
+  CHEQUE
+}
+
+enum PaymentType {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+  REGISTRATION
+  LATE_FEE
+  OTHER
+}
+
+enum NotificationType {
+  FEE_DUE
+  FEE_OVERDUE
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  SEAT_ASSIGNED
+  SEAT_VACATED
+  ATTENDANCE_ALERT
+  ANNOUNCEMENT
+  SYSTEM
+  REMINDER
+  SUBSCRIPTION_EXPIRY
+  TRIAL_EXPIRY
+  APPROVAL_STATUS
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum DocumentType {
+  AADHAAR
+  ID_PROOF
+  PASSPORT_PHOTO
+  ADMISSION_FORM
+  OTHER
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  CANCELLED
+  TRIAL
+}
+
+enum ActivityType {
+  STUDENT_CREATED
+  STUDENT_UPDATED
+  STUDENT_DELETED
+  STUDENT_SUSPENDED
+  STUDENT_ACTIVATED
+  SEAT_ASSIGNED
+  SEAT_VACATED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  ATTENDANCE_MARKED
+  SHIFT_CREATED
+  SHIFT_UPDATED
+  SETTINGS_UPDATED
+  USER_LOGIN
+  USER_LOGOUT
+  REPORT_GENERATED
+  DOCUMENT_UPLOADED
+  NOTIFICATION_SENT
+  LIBRARY_APPROVED
+  LIBRARY_REJECTED
+  LIBRARY_SUSPENDED
+}
+
+enum WaitlistStatus {
+  WAITING
+  NOTIFIED
+  ASSIGNED
+  CANCELLED
+  EXPIRED
+}
+
+// ─── New: Shift type enum ──────────────────────────────────────────────────
+enum ShiftType {
+  MORNING     // Shift A
+  AFTERNOON   // Shift B
+  NIGHT       // Shift C
+  FULL_DAY    // All 3 shifts
+  CUSTOM      // Any combination
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id                String      @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  email             String      @unique
+  emailVerified     DateTime?
+  image             String?
+  password          String?
+  role              UserRole    @default(STUDENT)
+  status            UserStatus  @default(PENDING_VERIFICATION)
+  phone             String?
+  otp               String?
+  otpExpiry         DateTime?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  verifyToken       String?
+  verifyTokenExpiry DateTime?
+  lastLogin         DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  library           Library?    @relation("LibraryAdmin")
+  student           Student?
+  accounts          Account[]
+  sessions          Session[]
+  activityLogs      ActivityLog[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Library {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  slug             String         @unique
+  description      String?
+  logo             String?
+  coverImage       String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  phone            String?
+  email            String?
+  website          String?
+  adminId          String         @unique @db.ObjectId
+  isActive         Boolean        @default(true)
+  isSuspended      Boolean        @default(false)
+  suspendedReason  String?
+  // ─── Approval system ───────────────────────────────────────────────────
+  approvalStatus   ApprovalStatus @default(PENDING)
+  approvedAt       DateTime?
+  approvedBy       String?        // Super Admin user ID
+  rejectedAt       DateTime?
+  rejectedReason   String?
+  // ─── Trial system ──────────────────────────────────────────────────────
+  trialStartedAt   DateTime?
+  trialEndsAt      DateTime?
+  isTrialActive    Boolean        @default(false)
+  trialExpired     Boolean        @default(false)
+  // ───────────────────────────────────────────────────────────────────────
+  totalSeats       Int            @default(0)
+  totalFloors      Int            @default(1)
+  openingTime      String         @default("06:00")
+  closingTime      String         @default("22:00")
+  primaryColor     String         @default("#6366f1")
+  secondaryColor   String         @default("#8b5cf6")
+  currency         String         @default("INR")
+  timezone         String         @default("Asia/Kolkata")
+  razorpayKeyId    String?
+  razorpaySecret   String?
+  smtpConfig       Json?
+  whatsappConfig   Json?
+  smsConfig        Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  admin          User           @relation("LibraryAdmin", fields: [adminId], references: [id])
+  students       Student[]
+  seats          Seat[]
+  shifts         Shift[]
+  payments       Payment[]
+  attendance     Attendance[]
+  notifications  Notification[]
+  documents      Document[]
+  activityLogs   ActivityLog[]
+  auditLogs      AuditLog[]
+  waitlist       Waitlist[]
+  subscription   Subscription?
+  settings       Settings?
+
+  @@map("libraries")
+}
+
+model Student {
+  id                   String        @id @default(auto()) @map("_id") @db.ObjectId
+  studentId            String        @unique
+  userId               String?       @unique @db.ObjectId
+  libraryId            String        @db.ObjectId
+  fullName             String
+  fatherName           String?
+  motherName           String?
+  email                String
+  phone                String
+  whatsappNumber       String?
+  emergencyContact     String?
+  profilePhoto         String?
+  address              String?
+  city                 String?
+  state                String?
+  pincode              String?
+  dateOfBirth          DateTime?
+  gender               String?
+  occupation           String?
+  institution          String?
+  // ─── Seat & Shift ─────────────────────────────────────────────────────
+  seatId               String?       @db.ObjectId
+  shiftId              String?       @db.ObjectId           // Primary shift ID
+  shiftType            ShiftType?                           // FULL_DAY / CUSTOM / etc.
+  shiftIds             String[]      @db.ObjectId           // All assigned shift IDs (for multi-shift)
+  // ─── Dates ────────────────────────────────────────────────────────────
+  joiningDate          DateTime      @default(now())
+  expiryDate           DateTime?
+  // ─── Fees ─────────────────────────────────────────────────────────────
+  monthlyFee           Float         @default(0)
+  depositAmount        Float         @default(0)
+  discountAmount       Float         @default(0)
+  lastPaymentDate      DateTime?
+  nextDueDate          DateTime?
+  pendingMonths        Int           @default(0)
+  totalDueAmount       Float         @default(0)
+  // ─── Status ───────────────────────────────────────────────────────────
+  status               UserStatus    @default(ACTIVE)
+  paymentStatus        PaymentStatus @default(PENDING)
+  // ─── Attendance ───────────────────────────────────────────────────────
+  attendancePercentage Float         @default(0)
+  totalPresent         Int           @default(0)
+  totalAbsent          Int           @default(0)
+  currentStreak        Int           @default(0)
+  longestStreak        Int           @default(0)
+  lastAttendanceDate   DateTime?
+  qrCode               String?
+  notes                String?
+  tags                 String[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  user          User?         @relation(fields: [userId], references: [id])
+  library       Library       @relation(fields: [libraryId], references: [id])
+  seat          Seat?         @relation(fields: [seatId], references: [id])
+  shift         Shift?        @relation(fields: [shiftId], references: [id])
+  payments      Payment[]
+  invoices      Invoice[]
+  attendance    Attendance[]
+  documents     Document[]
+  notifications Notification[]
+  waitlist      Waitlist[]
+  activityLogs  ActivityLog[]
+
+  @@map("students")
+}
+
+model Seat {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  seatNumber  String
+  floor       Int        @default(1)
+  row         String?
+  column      Int?
+  libraryId   String     @db.ObjectId
+  shiftId     String?    @db.ObjectId
+  status      SeatStatus @default(AVAILABLE)
+  seatType    SeatType   @default(STANDARD)
+  notes       String?
+  amenities   String[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  library   Library    @relation(fields: [libraryId], references: [id])
+  shift     Shift?     @relation(fields: [shiftId], references: [id])
+  students  Student[]
+  waitlist  Waitlist[]
+
+  @@unique([seatNumber, libraryId, shiftId])
+  @@map("seats")
+}
+
+model Shift {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  startTime   String
+  endTime     String
+  libraryId   String    @db.ObjectId
+  shiftType   ShiftType @default(MORNING)
+  color       String    @default("#6366f1")
+  maxStudents Int       @default(100)
+  isActive    Boolean   @default(true)
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  library    Library    @relation(fields: [libraryId], references: [id])
+  students   Student[]
+  seats      Seat[]
+  attendance Attendance[]
+
+  @@unique([name, libraryId])
+  @@map("shifts")
+}
+
+model Payment {
+  id                String        @id @default(auto()) @map("_id") @db.ObjectId
+  paymentId         String        @unique
+  studentId         String        @db.ObjectId
+  libraryId         String        @db.ObjectId
+  amount            Float
+  currency          String        @default("INR")
+  paymentType       PaymentType
+  paymentMode       PaymentMode   @default(RAZORPAY)
+  status            PaymentStatus @default(PENDING)
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  description       String?
+  dueDate           DateTime?
+  paidAt            DateTime?
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  lateFee           Float         @default(0)
+  discount          Float         @default(0)
+  taxAmount         Float         @default(0)
+  totalAmount       Float
+  receiptUrl        String?
+  notes             String?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  student Student  @relation(fields: [studentId], references: [id])
+  library Library  @relation(fields: [libraryId], references: [id])
+  invoice Invoice?
+
+  @@map("payments")
+}
+
+model Invoice {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String    @unique
+  studentId     String    @db.ObjectId
+  paymentId     String    @unique @db.ObjectId
+  libraryId     String    @db.ObjectId
+  amount        Float
+  tax           Float     @default(0)
+  discount      Float     @default(0)
+  total         Float
+  status        String    @default("PAID")
+  issuedAt      DateTime  @default(now())
+  dueDate       DateTime?
+  paidAt        DateTime?
+  pdfUrl        String?
+  items         Json[]
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@map("invoices")
+}
+
+model Attendance {
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
+  studentId    String           @db.ObjectId
+  libraryId    String           @db.ObjectId
+  shiftId      String?          @db.ObjectId
+  date         DateTime
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  status       AttendanceStatus @default(PRESENT)
+  markedBy     String?
+  markedViaQR  Boolean          @default(false)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  student Student  @relation(fields: [studentId], references: [id])
+  library Library  @relation(fields: [libraryId], references: [id])
+  shift   Shift?   @relation(fields: [shiftId], references: [id])
+
+  @@unique([studentId, date, shiftId])
+  @@map("attendance")
+}
+
+model Document {
+  id         String       @id @default(auto()) @map("_id") @db.ObjectId
+  studentId  String       @db.ObjectId
+  libraryId  String       @db.ObjectId
+  name       String
+  type       DocumentType @default(OTHER)
+  url        String
+  fileKey    String
+  size       Int?
+  mimeType   String?
+  isVerified Boolean      @default(false)
+  uploadedBy String?
+  notes      String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+  library Library @relation(fields: [libraryId], references: [id])
+
+  @@map("documents")
+}
+
+model Notification {
+  id          String              @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String              @db.ObjectId
+  studentId   String?             @db.ObjectId
+  libraryId   String?             @db.ObjectId
+  title       String
+  message     String
+  type        NotificationType
+  channel     NotificationChannel @default(IN_APP)
+  isRead      Boolean             @default(false)
+  readAt      DateTime?
+  actionUrl   String?
+  metadata    Json?
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime            @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  student Student? @relation(fields: [studentId], references: [id])
+  library Library? @relation(fields: [libraryId], references: [id])
+
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String       @db.ObjectId
+  libraryId   String?      @db.ObjectId
+  studentId   String?      @db.ObjectId
+  type        ActivityType
+  description String
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime     @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  library Library? @relation(fields: [libraryId], references: [id])
+  student Student? @relation(fields: [studentId], references: [id])
+
+  @@map("activity_logs")
+}
+
+model AuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  libraryId  String?  @db.ObjectId
+  action     String
+  resource   String
+  resourceId String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  library Library? @relation(fields: [libraryId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Waitlist {
+  id         String         @id @default(auto()) @map("_id") @db.ObjectId
+  studentId  String         @db.ObjectId
+  libraryId  String         @db.ObjectId
+  seatId     String?        @db.ObjectId
+  shiftId    String?        @db.ObjectId
+  status     WaitlistStatus @default(WAITING)
+  position   Int
+  notes      String?
+  notifiedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  student Student  @relation(fields: [studentId], references: [id])
+  library Library  @relation(fields: [libraryId], references: [id])
+  seat    Seat?    @relation(fields: [seatId], references: [id])
+
+  @@map("waitlist")
+}
+
+model Subscription {
+  id              String             @id @default(auto()) @map("_id") @db.ObjectId
+  libraryId       String             @unique @db.ObjectId
+  plan            SubscriptionPlan   @default(FREE)
+  status          SubscriptionStatus @default(TRIAL)
+  startDate       DateTime           @default(now())
+  endDate         DateTime?
+  trialEndDate    DateTime?
+  maxStudents     Int                @default(50)
+  maxSeats        Int                @default(100)
+  features        String[]
+  amount          Float              @default(0)
+  billingCycle    String             @default("MONTHLY")
+  razorpaySubId   String?
+  lastPaymentDate DateTime?
+  nextPaymentDate DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  library Library @relation(fields: [libraryId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model Settings {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  libraryId             String   @unique @db.ObjectId
+  lateFeeEnabled        Boolean  @default(true)
+  lateFeeAmount         Float    @default(50)
+  lateFeeGraceDays      Int      @default(5)
+  emailNotifications    Boolean  @default(true)
+  smsNotifications      Boolean  @default(false)
+  whatsappNotifications Boolean  @default(false)
+  feeReminderDays       Int[]    @default([7, 3, 1])
+  attendanceRequired    Boolean  @default(true)
+  minAttendancePercent  Float    @default(75)
+  autoRenewEnabled      Boolean  @default(false)
+  allowSelfCheckIn      Boolean  @default(true)
+  qrCheckInEnabled      Boolean  @default(true)
+  twoFactorEnabled      Boolean  @default(false)
+  sessionTimeout        Int      @default(43200) // 30 days in minutes
+  customDomain          String?
+  favicon               String?
+  metaTitle             String?
+  metaDescription       String?
+  metadata              Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  library Library @relation(fields: [libraryId], references: [id])
+
+  @@map("settings")
+}
