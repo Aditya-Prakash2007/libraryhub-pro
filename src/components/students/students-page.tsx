@@ -71,6 +71,7 @@ interface ShiftOption {
   name: string;
   startTime: string;
   endTime: string;
+  color: string;
 }
 
 export function StudentsPage() {

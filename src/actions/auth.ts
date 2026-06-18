@@ -142,6 +142,38 @@ export async function verifyOTPAndReset(email: string, otp: string, newPassword:
   }
 }
 
+// ─── Reset Password via Token ──────────────────────────────────────────────
+export async function resetPassword(token: string, newPassword: string) {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpiry: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      return { error: "Invalid or expired reset token." };
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return { error: "Failed to reset password. Please try again." };
+  }
+}
+
 // ─── Verify Email ──────────────────────────────────────────────────────────
 export async function verifyEmail(token: string) {
   try {

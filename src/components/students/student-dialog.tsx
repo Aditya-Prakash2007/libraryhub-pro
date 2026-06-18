@@ -32,6 +32,7 @@ interface Shift {
   name: string;
   startTime: string;
   endTime: string;
+  color: string;
 }
 
 interface Seat {
