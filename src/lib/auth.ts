@@ -9,6 +9,7 @@ const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  trustHost: true,
   session: {
     strategy: "jwt",
     maxAge: SESSION_MAX_AGE,
