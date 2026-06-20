@@ -46,8 +46,8 @@ export async function createRazorpayOrder(data: {
     const razorpay = getRazorpayForLibrary(library.razorpayKeyId, library.razorpaySecret);
     const publicKey = library.razorpayKeyId || process.env.RAZORPAY_KEY_ID;
 
-    const count = await prisma.payment.count({ where: { libraryId } });
-    const paymentId = generatePaymentId(count + 1);
+    // Timestamp-based ID — prevents duplicate key errors
+    const paymentId = generateUniquePaymentId();
 
     const order = await razorpay.orders.create({
       amount: Math.round(data.amount * 100),
@@ -122,11 +122,10 @@ export async function verifyPayment(data: {
       return { error: "Invalid payment signature" };
     }
 
-    const invoiceCount = await prisma.invoice.count({ where: { libraryId: payment.libraryId } });
-    const invoiceNumber = generateInvoiceNumber(invoiceCount + 1);
+    // Use unique invoice number to prevent duplicate key errors
+    const invoiceNumber = generateUniqueInvoiceNumber();
 
     const now = new Date();
-
     // Calculate next due date (1 month from now)
     const nextDue = new Date(now);
     nextDue.setMonth(nextDue.getMonth() + 1);
@@ -199,7 +198,20 @@ export async function verifyPayment(data: {
   }
 }
 
-// Record cash/manual payment
+// Generate truly unique payment ID using timestamp + random suffix
+function generateUniquePaymentId(): string {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const ts = Date.now().toString(36).toUpperCase().slice(-5);
+  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  return `PAY-${year}-${ts}${rand}`;
+}
+
+function generateUniqueInvoiceNumber(): string {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const ts = Date.now().toString(36).toUpperCase().slice(-5);
+  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  return `INV-${year}-${ts}${rand}`;
+}
 export async function recordManualPayment(data: {
   studentId: string;
   amount: number;
@@ -214,12 +226,9 @@ export async function recordManualPayment(data: {
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
 
-    const count = await prisma.payment.count({ where: { libraryId } });
-    const paymentId = generatePaymentId(count + 1);
-    const invoiceCount = await prisma.invoice.count({
-      where: { libraryId },
-    });
-    const invoiceNumber = generateInvoiceNumber(invoiceCount + 1);
+    // Timestamp-based IDs — no duplicate key errors
+    const paymentId = generateUniquePaymentId();
+    const invoiceNumber = generateUniqueInvoiceNumber();
 
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       const payment = await tx.payment.create({
