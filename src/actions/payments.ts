@@ -6,18 +6,22 @@ import { revalidatePath } from "next/cache";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import { generatePaymentId, generateInvoiceNumber } from "@/lib/utils";
+import { sendPaymentConfirmationEmail } from "@/services/brevo";
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-});
+function getRazorpayForLibrary(keyId?: string | null, keySecret?: string | null) {
+  // Use library's own Razorpay keys if configured, otherwise use platform keys
+  return new Razorpay({
+    key_id: keyId || process.env.RAZORPAY_KEY_ID!,
+    key_secret: keySecret || process.env.RAZORPAY_KEY_SECRET!,
+  });
+}
 
 async function getAdminLibraryId(): Promise<string | null> {
   const session = await auth();
   return session?.user?.libraryId ?? null;
 }
 
-// Create Razorpay order
+// Create Razorpay order — money goes to library owner's account
 export async function createRazorpayOrder(data: {
   studentId: string;
   amount: number;
@@ -31,23 +35,32 @@ export async function createRazorpayOrder(data: {
     const libraryId = session.user.libraryId;
     if (!libraryId) return { error: "Library not found" };
 
-    // Get payment count for ID generation
+    // Get library with their Razorpay keys
+    const library = await prisma.library.findUnique({
+      where: { id: libraryId },
+      select: { name: true, razorpayKeyId: true, razorpaySecret: true },
+    });
+    if (!library) return { error: "Library not found" };
+
+    // Use library's own keys if set, else platform keys
+    const razorpay = getRazorpayForLibrary(library.razorpayKeyId, library.razorpaySecret);
+    const publicKey = library.razorpayKeyId || process.env.RAZORPAY_KEY_ID;
+
     const count = await prisma.payment.count({ where: { libraryId } });
     const paymentId = generatePaymentId(count + 1);
 
-    // Create Razorpay order
     const order = await razorpay.orders.create({
-      amount: Math.round(data.amount * 100), // Convert to paise
+      amount: Math.round(data.amount * 100),
       currency: "INR",
       receipt: paymentId,
       notes: {
         studentId: data.studentId,
         libraryId,
+        libraryName: library.name,
         paymentType: data.paymentType,
       },
     });
 
-    // Create pending payment record
     const payment = await prisma.payment.create({
       data: {
         paymentId,
@@ -58,7 +71,7 @@ export async function createRazorpayOrder(data: {
         paymentMode: "RAZORPAY",
         status: "PENDING",
         razorpayOrderId: order.id,
-        description: data.description,
+        description: data.description || `${library.name} - ${data.paymentType.replace(/_/g, " ")}`,
         totalAmount: data.amount,
       },
     });
@@ -67,7 +80,8 @@ export async function createRazorpayOrder(data: {
       success: true,
       orderId: order.id,
       paymentId: payment.id,
-      key: process.env.RAZORPAY_KEY_ID,
+      key: publicKey,
+      libraryName: library.name,
     };
   } catch (error) {
     console.error("Create Razorpay order error:", error);
@@ -83,9 +97,24 @@ export async function verifyPayment(data: {
   paymentDbId: string;
 }) {
   try {
+    // Use library's own secret if configured
+    const payment = await prisma.payment.findUnique({
+      where: { id: data.paymentDbId },
+      include: {
+        student: {
+          include: { user: { select: { email: true } } },
+        },
+        library: {
+          select: { name: true, razorpaySecret: true },
+        },
+      },
+    });
+    if (!payment) return { error: "Payment not found" };
+
+    const secret = payment.library?.razorpaySecret || process.env.RAZORPAY_KEY_SECRET!;
     const body = `${data.razorpay_order_id}|${data.razorpay_payment_id}`;
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+      .createHmac("sha256", secret)
       .update(body)
       .digest("hex");
 
@@ -93,33 +122,27 @@ export async function verifyPayment(data: {
       return { error: "Invalid payment signature" };
     }
 
-    const payment = await prisma.payment.findUnique({
-      where: { id: data.paymentDbId },
-      include: { student: true },
-    });
-
-    if (!payment) return { error: "Payment not found" };
-
-    // Get invoice count
-    const invoiceCount = await prisma.invoice.count({
-      where: { libraryId: payment.libraryId },
-    });
+    const invoiceCount = await prisma.invoice.count({ where: { libraryId: payment.libraryId } });
     const invoiceNumber = generateInvoiceNumber(invoiceCount + 1);
 
+    const now = new Date();
+
+    // Calculate next due date (1 month from now)
+    const nextDue = new Date(now);
+    nextDue.setMonth(nextDue.getMonth() + 1);
+
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
-      // Update payment
       await tx.payment.update({
         where: { id: data.paymentDbId },
         data: {
           status: "PAID",
           razorpayPaymentId: data.razorpay_payment_id,
           razorpaySignature: data.razorpay_signature,
-          paidAt: new Date(),
+          paidAt: now,
         },
       });
 
-      // Create invoice
-      await tx.invoice.create({
+      const invoice = await tx.invoice.create({
         data: {
           invoiceNumber,
           studentId: payment.studentId,
@@ -130,7 +153,7 @@ export async function verifyPayment(data: {
           discount: payment.discount,
           total: payment.totalAmount,
           status: "PAID",
-          paidAt: new Date(),
+          paidAt: now,
           items: [
             {
               description: payment.description || "Library Fee",
@@ -142,16 +165,34 @@ export async function verifyPayment(data: {
         },
       });
 
-      // Update student payment status
       await tx.student.update({
         where: { id: payment.studentId },
-        data: { paymentStatus: "PAID" },
+        data: {
+          paymentStatus: "PAID",
+          lastPaymentDate: now,
+          nextDueDate: nextDue,
+          pendingMonths: 0,
+          totalDueAmount: 0,
+        },
       });
     });
 
+    // Send confirmation email (non-blocking)
+    const studentEmail = payment.student?.user?.email || payment.student?.email;
+    if (studentEmail) {
+      await sendPaymentConfirmationEmail(
+        studentEmail,
+        payment.student.fullName,
+        payment.library?.name || "Library",
+        payment.totalAmount,
+        invoiceNumber,
+        payment.paymentType
+      ).catch(() => {});
+    }
+
     revalidatePath("/admin/payments");
     revalidatePath("/student/payments");
-    return { success: true };
+    return { success: true, invoiceNumber };
   } catch (error) {
     console.error("Verify payment error:", error);
     return { error: "Payment verification failed" };

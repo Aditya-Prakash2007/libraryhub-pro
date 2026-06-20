@@ -65,6 +65,22 @@ export async function saveLibrarySystemSettings(data: {
   return { success: true };
 }
 
+export async function saveRazorpayKeys(keyId: string, keySecret: string) {
+  const session = await auth();
+  if (!session?.user?.libraryId) return { error: "Unauthorized" };
+
+  await prisma.library.update({
+    where: { id: session.user.libraryId },
+    data: {
+      razorpayKeyId: keyId,
+      razorpaySecret: keySecret,
+    },
+  });
+
+  revalidatePath("/admin/settings");
+  return { success: true };
+}
+
 export async function getLibraryWithSettings() {
   const session = await auth();
   if (!session?.user?.libraryId) return null;

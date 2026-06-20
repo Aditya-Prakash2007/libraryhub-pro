@@ -67,10 +67,13 @@ export function StudentPaymentsPage({ payments, student }: StudentPaymentsPagePr
         key: orderResult.key!,
         amount: amount * 100,
         currency: "INR",
-        name: student.library?.name || "LibraryHub Pro",
+        name: orderResult.libraryName || student.library?.name || "LibraryHub Pro",
         description: `${paymentType.replace("_", " ")} Fee`,
         order_id: orderResult.orderId!,
-        prefill: { name: student.fullName },
+        prefill: {
+          name: student.fullName,
+          contact: "",
+        },
         theme: { color: "#6366f1" },
         handler: async (response) => {
           const verifyResult = await verifyPayment({
@@ -204,9 +207,16 @@ export function StudentPaymentsPage({ payments, student }: StudentPaymentsPagePr
                     )}
                   </div>
                   {p.invoice && (
-                    <Button variant="ghost" size="icon" className="w-7 h-7 shrink-0">
-                      <Download className="w-3.5 h-3.5" />
-                    </Button>
+                    <a
+                      href={`/api/receipt/${p.id}`}
+                      download={`receipt-${p.invoice.invoiceNumber}.pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button variant="ghost" size="icon" className="w-7 h-7 shrink-0" title="Download Receipt">
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                    </a>
                   )}
                 </div>
               ))}

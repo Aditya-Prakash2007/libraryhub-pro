@@ -62,21 +62,21 @@ export function SignupForm() {
           animate={{ opacity: 1, scale: 1 }}
           className="text-center"
         >
-          <div className="w-16 h-16 bg-indigo-500/15 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <Clock className="w-8 h-8 text-indigo-500" />
+          <div className="w-16 h-16 bg-emerald-500/15 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500" />
           </div>
-          <h2 className="text-xl font-bold mb-3">Registration Submitted!</h2>
+          <h2 className="text-xl font-bold mb-3">Library Registered! 🎉</h2>
           <p className="text-muted-foreground text-sm mb-4 leading-relaxed">
-            Your library <strong className="text-foreground">"{libraryName}"</strong> has been registered
-            and is awaiting approval from the LibraryHub Pro admin team.
+            <strong className="text-foreground">"{libraryName}"</strong> successfully registered.
+            Your <strong className="text-indigo-400">48-hour free trial</strong> has started!
           </p>
           <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-left mb-6">
-            <p className="text-sm font-semibold text-indigo-400 mb-2">What happens next?</p>
+            <p className="text-sm font-semibold text-indigo-400 mb-2">Next steps:</p>
             <ol className="space-y-1.5 text-xs text-muted-foreground">
-              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">1.</span>Our team reviews your registration (within 24 hours)</li>
-              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">2.</span>You receive an email when approved</li>
-              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">3.</span>48-hour free trial starts automatically</li>
-              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">4.</span>Full dashboard access to manage your library</li>
+              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">1.</span>Login with "Library Owner" option</li>
+              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">2.</span>Add seats and shifts</li>
+              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">3.</span>Start adding students</li>
+              <li className="flex items-start gap-2"><span className="text-indigo-500 font-bold shrink-0">4.</span>Before 48hrs ends, purchase subscription</li>
             </ol>
           </div>
           <Button variant="outline" className="w-full" asChild>

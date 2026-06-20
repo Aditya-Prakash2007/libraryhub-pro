@@ -4,9 +4,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateStudentId } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
+import bcrypt from "bcryptjs";
+import { sendWelcomeEmail } from "@/services/brevo";
 import type { StudentFormData } from "@/schemas";
 
-// Get library ID for the current admin
 async function getAdminLibraryId(): Promise<string | null> {
   const session = await auth();
   return session?.user?.libraryId ?? null;
@@ -25,14 +26,7 @@ export async function getStudents(params?: {
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
 
-    const {
-      search = "",
-      status = "all",
-      shiftId = "all",
-      paymentStatus = "all",
-      page = 1,
-      limit = 20,
-    } = params || {};
+    const { search = "", status = "all", shiftId = "all", paymentStatus = "all", page = 1, limit = 20 } = params || {};
 
     const where = {
       libraryId,
@@ -63,12 +57,7 @@ export async function getStudents(params?: {
       prisma.student.count({ where }),
     ]);
 
-    return {
-      students,
-      total,
-      pages: Math.ceil(total / limit),
-      page,
-    };
+    return { students, total, pages: Math.ceil(total / limit), page };
   } catch (error) {
     console.error("Get students error:", error);
     return { error: "Failed to fetch students" };
@@ -78,27 +67,22 @@ export async function getStudents(params?: {
 // Get single student
 export async function getStudent(id: string) {
   try {
-    const libraryId = await getAdminLibraryId();
-    if (!libraryId) return { error: "Unauthorized" };
+    const session = await auth();
+    if (!session?.user) return { error: "Unauthorized" };
+
+    // Admin can view any student in their library, student can view only themselves
+    const libraryId = session.user.libraryId;
+    if (!libraryId) return { error: "Library not found" };
 
     const student = await prisma.student.findFirst({
       where: { id, libraryId },
       include: {
         seat: true,
         shift: true,
-        payments: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
-        attendance: {
-          orderBy: { date: "desc" },
-          take: 30,
-        },
+        payments: { orderBy: { createdAt: "desc" }, take: 10 },
+        attendance: { orderBy: { date: "desc" }, take: 30 },
         documents: true,
-        notifications: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
+        notifications: { orderBy: { createdAt: "desc" }, take: 10 },
       },
     });
 
@@ -110,20 +94,33 @@ export async function getStudent(id: string) {
   }
 }
 
-// Create student
+// Create student — also creates a User account so student can login
 export async function createStudent(data: StudentFormData) {
   try {
-    const libraryId = await getAdminLibraryId();
-    if (!libraryId) return { error: "Unauthorized" };
+    const session = await auth();
+    if (!session?.user?.libraryId) return { error: "Unauthorized" };
 
-    // Get library for slug
+    const libraryId = session.user.libraryId;
+
     const library = await prisma.library.findUnique({
       where: { id: libraryId },
-      select: { slug: true },
+      select: { slug: true, name: true },
     });
     if (!library) return { error: "Library not found" };
 
-    // Count existing students for ID generation
+    // Check duplicate email in this library
+    const existingStudent = await prisma.student.findFirst({
+      where: { email: data.email, libraryId },
+    });
+    if (existingStudent) return { error: "A student with this email already exists" };
+
+    // Check if user account with this email exists
+    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    if (existingUser && existingUser.role !== "STUDENT") {
+      return { error: "This email is already registered as an admin account" };
+    }
+
+    // Generate student ID
     const count = await prisma.student.count({ where: { libraryId } });
     const studentId = generateStudentId(library.slug, count + 1);
 
@@ -135,61 +132,90 @@ export async function createStudent(data: StudentFormData) {
       if (!seat) return { error: "Selected seat is not available" };
     }
 
-    const student = await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
+    // Default password = phone number (student can change via forgot password)
+    const defaultPassword = data.phone.replace(/\D/g, "").slice(-10);
+    const hashedPassword = await bcrypt.hash(defaultPassword, 12);
+
+    const student = await prisma.$transaction(async (tx) => {
+      // Create or reuse user account
+      let userId: string;
+
+      if (existingUser) {
+        userId = existingUser.id;
+      } else {
+        const newUser = await tx.user.create({
+          data: {
+            name: data.fullName,
+            email: data.email,
+            password: hashedPassword,
+            role: "STUDENT",
+            status: "ACTIVE",
+            phone: data.phone,
+            emailVerified: new Date(),
+          },
+        });
+        userId = newUser.id;
+      }
+
       const newStudent = await tx.student.create({
         data: {
           studentId,
+          userId,
           libraryId,
           fullName: data.fullName,
-          fatherName: data.fatherName,
-          motherName: data.motherName,
+          fatherName: data.fatherName || null,
+          motherName: data.motherName || null,
           email: data.email,
           phone: data.phone,
-          whatsappNumber: data.whatsappNumber,
-          emergencyContact: data.emergencyContact,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          pincode: data.pincode,
-          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-          gender: data.gender,
-          occupation: data.occupation,
-          institution: data.institution,
+          whatsappNumber: data.whatsappNumber || null,
+          emergencyContact: data.emergencyContact || null,
+          address: data.address || null,
+          city: data.city || null,
+          state: data.state || null,
+          pincode: data.pincode || null,
+          gender: data.gender || null,
+          occupation: data.occupation || null,
+          institution: data.institution || null,
           seatId: data.seatId || null,
           shiftId: data.shiftId || null,
           joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
-          expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
           monthlyFee: data.monthlyFee,
           depositAmount: data.depositAmount || 0,
           discountAmount: data.discountAmount || 0,
-          notes: data.notes,
+          notes: data.notes || null,
+          // Auto-calculate next due date
+          nextDueDate: data.joiningDate
+            ? (() => { const d = new Date(data.joiningDate); d.setMonth(d.getMonth() + 1); return d; })()
+            : (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })(),
         },
       });
 
-      // Update seat status if assigned
+      // Update seat status
       if (data.seatId) {
-        await tx.seat.update({
-          where: { id: data.seatId },
-          data: { status: "OCCUPIED" },
-        });
+        await tx.seat.update({ where: { id: data.seatId }, data: { status: "OCCUPIED" } });
       }
 
       // Log activity
-      const session = await auth();
-      if (session?.user?.id) {
-        await tx.activityLog.create({
-          data: {
-            userId: session.user.id,
-            libraryId,
-            studentId: newStudent.id,
-            type: "STUDENT_CREATED",
-            description: `New student ${newStudent.fullName} (${studentId}) added`,
-          },
-        });
-      }
+      await tx.activityLog.create({
+        data: {
+          userId: session.user.id,
+          libraryId,
+          studentId: newStudent.id,
+          type: "STUDENT_CREATED",
+          description: `New student ${newStudent.fullName} (${studentId}) added`,
+        },
+      });
 
       return newStudent;
     });
+
+    // Send welcome email with login info
+    await sendWelcomeEmail(
+      data.email,
+      data.fullName,
+      library.name
+    ).catch(() => {});
 
     revalidatePath("/admin/students");
     return { success: true, student };
@@ -208,7 +234,6 @@ export async function updateStudent(id: string, data: Partial<StudentFormData>) 
     const existing = await prisma.student.findFirst({ where: { id, libraryId } });
     if (!existing) return { error: "Student not found" };
 
-    // Handle seat change
     if (data.seatId && data.seatId !== existing.seatId) {
       const newSeat = await prisma.seat.findFirst({
         where: { id: data.seatId, libraryId, status: "AVAILABLE" },
@@ -216,20 +241,22 @@ export async function updateStudent(id: string, data: Partial<StudentFormData>) 
       if (!newSeat) return { error: "Selected seat is not available" };
     }
 
-    const student = await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
-      // Free old seat if changing
+    const student = await prisma.$transaction(async (tx) => {
       if (data.seatId !== undefined && existing.seatId && data.seatId !== existing.seatId) {
-        await tx.seat.update({
-          where: { id: existing.seatId },
-          data: { status: "AVAILABLE" },
-        });
+        await tx.seat.update({ where: { id: existing.seatId }, data: { status: "AVAILABLE" } });
+      }
+      if (data.seatId && data.seatId !== existing.seatId) {
+        await tx.seat.update({ where: { id: data.seatId }, data: { status: "OCCUPIED" } });
       }
 
-      // Occupy new seat
-      if (data.seatId && data.seatId !== existing.seatId) {
-        await tx.seat.update({
-          where: { id: data.seatId },
-          data: { status: "OCCUPIED" },
+      // Also update user name/phone if changed
+      if ((data.fullName || data.phone) && existing.userId) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            ...(data.fullName && { name: data.fullName }),
+            ...(data.phone && { phone: data.phone }),
+          },
         });
       }
 
@@ -262,16 +289,10 @@ export async function deleteStudent(id: string) {
     const student = await prisma.student.findFirst({ where: { id, libraryId } });
     if (!student) return { error: "Student not found" };
 
-    await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
-      // Free seat
+    await prisma.$transaction(async (tx) => {
       if (student.seatId) {
-        await tx.seat.update({
-          where: { id: student.seatId },
-          data: { status: "AVAILABLE" },
-        });
+        await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
       }
-
-      // Delete student (cascade will handle related records)
       await tx.student.delete({ where: { id } });
     });
 
@@ -283,17 +304,13 @@ export async function deleteStudent(id: string) {
   }
 }
 
-// Toggle student status (suspend/activate)
+// Toggle student status
 export async function toggleStudentStatus(id: string, status: "ACTIVE" | "SUSPENDED" | "INACTIVE") {
   try {
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
 
-    await prisma.student.update({
-      where: { id },
-      data: { status },
-    });
-
+    await prisma.student.update({ where: { id }, data: { status } });
     revalidatePath("/admin/students");
     return { success: true };
   } catch (error) {
@@ -302,106 +319,20 @@ export async function toggleStudentStatus(id: string, status: "ACTIVE" | "SUSPEN
   }
 }
 
-// Bulk import students
-export async function bulkImportStudents(students: StudentFormData[]) {
-  try {
-    const libraryId = await getAdminLibraryId();
-    if (!libraryId) return { error: "Unauthorized" };
-
-    const library = await prisma.library.findUnique({
-      where: { id: libraryId },
-      select: { slug: true },
-    });
-    if (!library) return { error: "Library not found" };
-
-    let imported = 0;
-    let failed = 0;
-    let duplicates = 0;
-
-    let count = await prisma.student.count({ where: { libraryId } });
-
-    for (const data of students) {
-      try {
-        const exists = await prisma.student.findFirst({
-          where: {
-            libraryId,
-            OR: [
-              { email: data.email },
-              { phone: data.phone }
-            ]
-          }
-        });
-
-        if (exists) {
-          duplicates++;
-          continue;
-        }
-
-        count++;
-        const studentId = generateStudentId(library.slug, count);
-
-        await prisma.student.create({
-          data: {
-            studentId,
-            libraryId,
-            fullName: data.fullName,
-            fatherName: data.fatherName,
-            motherName: data.motherName,
-            email: data.email,
-            phone: data.phone,
-            whatsappNumber: data.whatsappNumber,
-            emergencyContact: data.emergencyContact,
-            address: data.address,
-            city: data.city,
-            state: data.state,
-            pincode: data.pincode,
-            dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-            gender: data.gender,
-            occupation: data.occupation,
-            institution: data.institution,
-            joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
-            monthlyFee: data.monthlyFee,
-            depositAmount: data.depositAmount || 0,
-            discountAmount: data.discountAmount || 0,
-            notes: data.notes,
-          }
-        });
-        imported++;
-      } catch (err) {
-        failed++;
-      }
-    }
-
-    revalidatePath("/admin/students");
-    return { imported, failed, duplicates };
-  } catch (error) {
-    console.error("Bulk import error:", error);
-    return { error: "Failed to import students" };
-  }
-}
-
-// Get dashboard stats
+// Dashboard stats
 export async function getDashboardStats() {
   try {
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
     const [
-      totalStudents,
-      activeStudents,
-      inactiveStudents,
-      suspendedStudents,
-      totalSeats,
-      occupiedSeats,
-      revenueToday,
-      revenueThisMonth,
-      pendingPayments,
-      todayAttendance,
-      overdueStudents,
+      totalStudents, activeStudents, inactiveStudents, suspendedStudents,
+      totalSeats, occupiedSeats,
+      revenueToday, revenueThisMonth,
+      pendingPayments, todayAttendance, overdueStudents,
     ] = await prisma.$transaction([
       prisma.student.count({ where: { libraryId } }),
       prisma.student.count({ where: { libraryId, status: "ACTIVE" } }),
@@ -409,47 +340,23 @@ export async function getDashboardStats() {
       prisma.student.count({ where: { libraryId, status: "SUSPENDED" } }),
       prisma.seat.count({ where: { libraryId } }),
       prisma.seat.count({ where: { libraryId, status: "OCCUPIED" } }),
-      prisma.payment.aggregate({
-        where: { libraryId, status: "PAID", paidAt: { gte: today } },
-        _sum: { totalAmount: true },
-      }),
-      prisma.payment.aggregate({
-        where: { libraryId, status: "PAID", paidAt: { gte: monthStart } },
-        _sum: { totalAmount: true },
-      }),
-      prisma.payment.count({
-        where: { libraryId, status: { in: ["PENDING", "OVERDUE"] } },
-      }),
-      prisma.attendance.count({
-        where: { libraryId, date: { gte: today }, status: "PRESENT" },
-      }),
-      prisma.student.count({
-        where: {
-          libraryId,
-          paymentStatus: "OVERDUE",
-          status: "ACTIVE",
-        },
-      }),
+      prisma.payment.aggregate({ where: { libraryId, status: "PAID", paidAt: { gte: today } }, _sum: { totalAmount: true } }),
+      prisma.payment.aggregate({ where: { libraryId, status: "PAID", paidAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
+      prisma.payment.count({ where: { libraryId, status: { in: ["PENDING", "OVERDUE"] } } }),
+      prisma.attendance.count({ where: { libraryId, date: { gte: today }, status: "PRESENT" } }),
+      prisma.student.count({ where: { libraryId, paymentStatus: "OVERDUE", status: "ACTIVE" } }),
     ]);
 
     const occupancyRate = totalSeats > 0 ? Math.round((occupiedSeats / totalSeats) * 100) : 0;
     const attendanceRate = activeStudents > 0 ? Math.round((todayAttendance / activeStudents) * 100) : 0;
 
     return {
-      totalStudents,
-      activeStudents,
-      inactiveStudents,
-      suspendedStudents,
-      totalSeats,
-      occupiedSeats,
-      availableSeats: totalSeats - occupiedSeats,
+      totalStudents, activeStudents, inactiveStudents, suspendedStudents,
+      totalSeats, occupiedSeats, availableSeats: totalSeats - occupiedSeats,
       revenueToday: revenueToday._sum.totalAmount || 0,
       revenueThisMonth: revenueThisMonth._sum.totalAmount || 0,
-      pendingPayments,
-      todayAttendance,
-      overdueStudents,
-      occupancyRate,
-      attendanceRate,
+      pendingPayments, todayAttendance, overdueStudents,
+      occupancyRate, attendanceRate,
     };
   } catch (error) {
     console.error("Get dashboard stats error:", error);

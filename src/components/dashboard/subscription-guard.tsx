@@ -85,7 +85,7 @@ function TrialBanner({ trialEndsAt }: { trialEndsAt: Date }) {
         {isUrgent && " — Trial ending soon!"}
       </span>
       <Button size="sm" className="h-7 text-xs" asChild>
-        <Link href="/admin/settings?tab=subscription">Upgrade Now</Link>
+        <Link href="/admin/subscription">Upgrade Now</Link>
       </Button>
     </motion.div>
   );
@@ -97,13 +97,13 @@ function BlockedScreen({ reason }: { reason: string }) {
       icon: <Clock className="w-12 h-12 text-amber-500" />,
       title: "Trial Expired",
       desc: "Your 48-hour free trial has ended. Purchase a subscription to continue using LibraryHub Pro.",
-      cta: "/admin/settings?tab=subscription",
+      cta: "/admin/subscription",
     },
     SUBSCRIPTION_EXPIRED: {
       icon: <CreditCard className="w-12 h-12 text-rose-500" />,
       title: "Subscription Expired",
       desc: "Your subscription has expired. Renew now to restore access to your library.",
-      cta: "/admin/settings?tab=subscription",
+      cta: "/admin/subscription",
     },
     PENDING_APPROVAL: {
       icon: <Clock className="w-12 h-12 text-indigo-500" />,
@@ -162,3 +162,4 @@ function BlockedScreen({ reason }: { reason: string }) {
     </div>
   );
 }
+

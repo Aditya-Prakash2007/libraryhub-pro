@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, Grid3X3, Clock, CreditCard,
   CalendarCheck, BarChart3, Bell, Settings, BookOpen,
-  ChevronLeft, Building2, LogOut, User, Zap,
+  ChevronLeft, Building2, LogOut, User, Zap, QrCode,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ import { ADMIN_NAV_ITEMS, STUDENT_NAV_ITEMS, SUPERADMIN_NAV_ITEMS } from "@/cons
 
 const iconMap = {
   LayoutDashboard, Users, Grid3X3, Clock, CreditCard,
-  CalendarCheck, BarChart3, Bell, Settings, Building2, User,
+  CalendarCheck, BarChart3, Bell, Settings, Building2, User, QrCode, Zap,
 };
 
 interface SidebarProps {

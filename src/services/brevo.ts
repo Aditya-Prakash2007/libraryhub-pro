@@ -1,9 +1,6 @@
 // Brevo (formerly Sendinblue) Email Service
 // Replaces Resend/SMTP completely
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
-const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || "noreply@libraryhubpro.com";
-const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "LibraryHub Pro";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 interface SendEmailParams {
@@ -14,12 +11,26 @@ interface SendEmailParams {
   text?: string;
 }
 
-// Core Brevo API call
+// Core Brevo API call — reads env vars at call time (not module load time)
 async function sendBrevoEmail(params: SendEmailParams): Promise<{ success: boolean; error?: string }> {
+  const BREVO_API_KEY = process.env.BREVO_API_KEY;
+  const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || "adityaprakash91111@gmail.com";
+  const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "LibraryHub Pro";
+
   if (!BREVO_API_KEY) {
-    console.warn("BREVO_API_KEY not set — skipping email");
-    return { success: true }; // Don't crash in dev if no key
+    console.warn("[Brevo] BREVO_API_KEY not set — skipping email send");
+    return { success: false, error: "BREVO_API_KEY not configured" };
   }
+
+  const payload = {
+    sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
+    to: [{ email: params.to, name: params.toName || params.to }],
+    subject: params.subject,
+    htmlContent: params.html,
+    ...(params.text && { textContent: params.text }),
+  };
+
+  console.log(`[Brevo] Sending "${params.subject}" to ${params.to}`);
 
   try {
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -29,24 +40,20 @@ async function sendBrevoEmail(params: SendEmailParams): Promise<{ success: boole
         "api-key": BREVO_API_KEY,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
-        to: [{ email: params.to, name: params.toName || params.to }],
-        subject: params.subject,
-        htmlContent: params.html,
-        textContent: params.text,
-      }),
+      body: JSON.stringify(payload),
     });
 
+    const responseText = await res.text();
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      console.error("Brevo API error:", err);
-      return { success: false, error: JSON.stringify(err) };
+      console.error(`[Brevo] API error ${res.status}:`, responseText);
+      return { success: false, error: responseText };
     }
 
+    console.log(`[Brevo] Email sent successfully to ${params.to}. Response:`, responseText);
     return { success: true };
   } catch (error) {
-    console.error("Brevo send error:", error);
+    console.error("[Brevo] Network error:", error);
     return { success: false, error: String(error) };
   }
 }

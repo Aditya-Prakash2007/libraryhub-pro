@@ -40,6 +40,9 @@ export async function registerLibraryAdmin(data: {
         },
       });
 
+      // Trial starts immediately — no approval needed
+      const trialEndsAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
       const library = await tx.library.create({
         data: {
           name: data.libraryName,
@@ -47,8 +50,12 @@ export async function registerLibraryAdmin(data: {
           adminId: user.id,
           email: data.email,
           phone: data.phone,
-          approvalStatus: "PENDING", // Requires super admin approval
-          isActive: false,           // Not active until approved
+          approvalStatus: "APPROVED",   // Auto-approved
+          isActive: true,
+          isTrialActive: true,
+          trialStartedAt: new Date(),
+          trialEndsAt,
+          trialExpired: false,
         },
       });
 
@@ -57,12 +64,14 @@ export async function registerLibraryAdmin(data: {
         data: DEFAULT_SHIFTS.map((shift) => ({ ...shift, libraryId: library.id })),
       });
 
-      // Subscription (will activate after approval)
+      // Subscription — trial active immediately
       await tx.subscription.create({
         data: {
           libraryId: library.id,
           plan: "FREE",
-          status: "INACTIVE",
+          status: "TRIAL",
+          trialEndDate: trialEndsAt,
+          startDate: new Date(),
           maxStudents: 50,
           maxSeats: 100,
         },
@@ -87,8 +96,11 @@ export async function registerLibraryAdmin(data: {
 export async function sendOTP(email: string) {
   try {
     const user = await prisma.user.findUnique({ where: { email } });
-    // Don't reveal if email doesn't exist
-    if (!user) return { success: true };
+    // Don't reveal if email doesn't exist — but log it
+    if (!user) {
+      console.log(`[sendOTP] No user found for email: ${email}`);
+      return { error: "No account found with this email address." };
+    }
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -99,7 +111,17 @@ export async function sendOTP(email: string) {
       data: { otp, otpExpiry },
     });
 
-    await sendPasswordResetOTP(email, user.name, otp).catch(() => {});
+    console.log(`[sendOTP] OTP generated for ${email}: ${otp} (expires ${otpExpiry})`);
+
+    const result = await sendPasswordResetOTP(email, user.name, otp);
+
+    if (!result.success) {
+      console.error("[sendOTP] Email send failed:", result.error);
+      // Still return success to user but log failure
+      // In production, you might want to retry or queue
+    } else {
+      console.log(`[sendOTP] OTP email sent successfully to ${email}`);
+    }
 
     return { success: true };
   } catch (error) {

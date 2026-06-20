@@ -30,7 +30,6 @@ import type { Column } from "@/components/shared/data-table";
 import type { StudentFormData } from "@/schemas";
 import { exportStudentsToExcel } from "@/utils/export";
 import { ExcelImportDialog } from "./excel-import-dialog";
-import { bulkImportStudents } from "@/actions/bulk-import";
 
 // Shape returned by getStudents (dates come as Date objects from server)
 interface StudentRow {

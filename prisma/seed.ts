@@ -68,30 +68,62 @@ async function main() {
 
   // ==================== SHIFTS ====================
   const shiftA = await prisma.shift.upsert({
-    where: { name_libraryId: { name: "Morning Shift", libraryId: library.id } },
+    where: { name_libraryId: { name: "Shift A", libraryId: library.id } },
     update: {},
     create: {
-      name: "Morning Shift",
+      name: "Shift A",
       startTime: "06:00",
       endTime: "14:00",
       color: "#6366f1",
       maxStudents: 50,
       libraryId: library.id,
-      description: "6:00 AM - 2:00 PM",
+      shiftType: "MORNING",
+      description: "Morning: 6:00 AM – 2:00 PM",
     },
   });
 
   const shiftB = await prisma.shift.upsert({
-    where: { name_libraryId: { name: "Evening Shift", libraryId: library.id } },
+    where: { name_libraryId: { name: "Shift B", libraryId: library.id } },
     update: {},
     create: {
-      name: "Evening Shift",
+      name: "Shift B",
       startTime: "14:00",
       endTime: "22:00",
       color: "#8b5cf6",
       maxStudents: 50,
       libraryId: library.id,
-      description: "2:00 PM - 10:00 PM",
+      shiftType: "AFTERNOON",
+      description: "Afternoon: 2:00 PM – 10:00 PM",
+    },
+  });
+
+  await prisma.shift.upsert({
+    where: { name_libraryId: { name: "Shift C", libraryId: library.id } },
+    update: {},
+    create: {
+      name: "Shift C",
+      startTime: "22:00",
+      endTime: "06:00",
+      color: "#a78bfa",
+      maxStudents: 50,
+      libraryId: library.id,
+      shiftType: "NIGHT",
+      description: "Night: 10:00 PM – 6:00 AM",
+    },
+  });
+
+  await prisma.shift.upsert({
+    where: { name_libraryId: { name: "Full Day", libraryId: library.id } },
+    update: {},
+    create: {
+      name: "Full Day",
+      startTime: "06:00",
+      endTime: "06:00",
+      color: "#10b981",
+      maxStudents: 50,
+      libraryId: library.id,
+      shiftType: "FULL_DAY",
+      description: "Full Day: 6:00 AM – 6:00 AM (24 hrs)",
     },
   });
   console.log("✅ Shifts created");
