@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { RefreshCw } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -20,13 +21,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { studentSchema } from "@/schemas";
 import { createStudent, updateStudent } from "@/actions/students";
 import { getSeats } from "@/actions/seats";
+import { getShifts } from "@/actions/shifts";
 import type { StudentFormData } from "@/schemas";
 import { SEAT_STATUS_COLORS } from "@/constants";
 import { cn } from "@/lib/utils";
 import { ShiftSelector } from "@/components/shifts/shift-selector";
 
 interface Shift { id: string; name: string; startTime: string; endTime: string; color: string; }
-interface Seat { id: string; seatNumber: string; floor: number; status: string; seatType: string; students?: { fullName: string }[]; }
+interface Seat { id: string; seatNumber: string; floor: number; status: string; seatType: string; students?: { fullName: string; shift?: { name: string } }[]; }
 
 // ── STABLE FEE INPUT — defined OUTSIDE parent component so it NEVER re-mounts ──
 // This is the definitive fix: defining FeeInput inside StudentDialog caused re-mount on every parent state change
@@ -35,9 +37,10 @@ interface StableFeeInputProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
   defaultValue?: number;
   required?: boolean;
+  onInput?: () => void;
 }
 
-function StableFeeInput({ label, inputRef, defaultValue, required }: StableFeeInputProps) {
+function StableFeeInput({ label, inputRef, defaultValue, required, onInput }: StableFeeInputProps) {
   return (
     <div className="space-y-1.5">
       <label className={`text-sm font-medium leading-none${required ? " after:content-['*'] after:text-destructive after:ml-0.5" : ""}`}>
@@ -55,6 +58,7 @@ function StableFeeInput({ label, inputRef, defaultValue, required }: StableFeeIn
           placeholder="0"
           autoComplete="off"
           className="flex h-10 w-full rounded-lg border border-input bg-background pl-7 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 transition-colors"
+          onInput={onInput}
           onKeyDown={(e) => {
             // Allow: digits, backspace, delete, tab, enter, dot, arrow keys
             const allowed = ["Backspace", "Delete", "Tab", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "."];
@@ -77,11 +81,13 @@ interface StudentDialogProps {
   onOpenChange: (open: boolean) => void;
   student?: Partial<StudentFormData & { id: string }> | null;
   onSuccess: () => void;
-  shifts: Shift[];
+  shifts?: Shift[]; // Optional — dialog loads fresh shifts itself
 }
 
-export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }: StudentDialogProps) {
+export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: propShifts = [] }: StudentDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [shifts, setShifts] = useState<Shift[]>(propShifts);
+  const [shiftsLoading, setShiftsLoading] = useState(false);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seatsLoading, setSeatsLoading] = useState(false);
   const [floorFilter, setFloorFilter] = useState<number | "all">("all");
@@ -90,6 +96,21 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
   const depositRef = useRef<HTMLInputElement>(null);
   const discountRef = useRef<HTMLInputElement>(null);
   const isEdit = !!student?.id;
+
+  // Update fee summary display without re-rendering (avoids focus loss)
+  const updateFeeSummary = useCallback(() => {
+    const fee = parseFloat(monthlyFeeRef.current?.value || "0") || 0;
+    const discount = parseFloat(discountRef.current?.value || "0") || 0;
+    const total = Math.max(0, fee - discount);
+    const fmtINR = (v: number) => v.toLocaleString("en-IN");
+
+    const elFee = document.getElementById("fee-monthly-display");
+    const elDiscount = document.getElementById("fee-discount-display");
+    const elTotal = document.getElementById("fee-total-display");
+    if (elFee) elFee.textContent = `₹${fmtINR(fee)}`;
+    if (elDiscount) elDiscount.textContent = `− ₹${fmtINR(discount)}`;
+    if (elTotal) elTotal.textContent = `₹${fmtINR(total)}`;
+  }, []);
 
   const {
     register,
@@ -150,7 +171,20 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
     setSeatsLoading(false);
   }, [selectedShiftId]);
 
-  useEffect(() => { if (open) loadSeats(); }, [open, loadSeats]);
+  // Load fresh shifts every time dialog opens — captures any new/updated shifts
+  const loadShifts = useCallback(async () => {
+    setShiftsLoading(true);
+    const result = await getShifts();
+    if (!("error" in result)) setShifts(result.shifts as Shift[]);
+    setShiftsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadShifts();
+      loadSeats();
+    }
+  }, [open, loadShifts, loadSeats]);
 
   const onSubmit = async (data: StudentFormData) => {
     // Read fee values directly from DOM refs — no state involved
@@ -160,6 +194,20 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
     data.monthlyFee = fee;
     data.depositAmount = deposit;
     data.discountAmount = discount;
+
+    // Validate mandatory fields
+    if (!data.shiftId) {
+      toast.error("Please select a shift (Seat & Shift tab)");
+      return;
+    }
+    if (!data.seatId) {
+      toast.error("Please select a seat (Seat & Shift tab)");
+      return;
+    }
+    if (fee <= 0) {
+      toast.error("Monthly fee must be greater than 0 (Fees tab)");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -243,19 +291,47 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
 
               {/* ── Seat & Shift ── */}
               <TabsContent value="seat" className="space-y-4 mt-0">
-                {/* Shift — only A, B, C, Full Day */}
+                {/* Shift — mandatory, loads fresh from DB */}
                 <div className="space-y-1.5">
-                  <Label>Shift *</Label>
-                  <ShiftSelector
-                    shifts={shifts}
-                    value={selectedShiftId ?? ""}
-                    onChange={(id) => { setValue("shiftId", id); setValue("seatId", ""); }}
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label className="after:content-['*'] after:text-destructive after:ml-0.5">
+                      Shift
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-muted-foreground px-2"
+                      onClick={loadShifts}
+                      disabled={shiftsLoading}
+                    >
+                      <RefreshCw className={cn("w-3 h-3 mr-1", shiftsLoading && "animate-spin")} />
+                      {shiftsLoading ? "Loading..." : "Refresh"}
+                    </Button>
+                  </div>
+                  {shifts.length === 0 && !shiftsLoading ? (
+                    <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-400">
+                      ⚠️ No shifts found. Create shifts first in the{" "}
+                      <a href="/admin/shifts" target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                        Shifts page
+                      </a>
+                      , then click Refresh.
+                    </div>
+                  ) : (
+                    <ShiftSelector
+                      shifts={shifts}
+                      value={selectedShiftId ?? ""}
+                      onChange={(id) => { setValue("shiftId", id, { shouldValidate: true }); setValue("seatId", ""); }}
+                    />
+                  )}
+                  {errors.shiftId && (
+                    <p className="text-xs text-destructive">⚠️ {errors.shiftId.message}</p>
+                  )}
                 </div>
 
-                {/* Seat map */}
+                {/* Seat map — mandatory */}
                 <div className="space-y-1.5">
-                  <Label>Seat</Label>
+                  <Label className="after:content-['*'] after:text-destructive after:ml-0.5">Seat</Label>
                   <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-3">
                     {/* Legend */}
                     <div className="flex flex-wrap gap-3">
@@ -273,8 +349,9 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                           </div>
                         );
                       })}
-                      {floors.length > 1 && (
+                      {floors.length > 0 && (
                         <div className="flex gap-1 ml-auto">
+                          <span className="text-xs text-muted-foreground self-center mr-1">Floor:</span>
                           {["all", ...floors].map((f) => (
                             <button
                               key={String(f)}
@@ -307,8 +384,8 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                           const fs = visibleSeats.filter((s) => s.floor === floor);
                           return (
                             <div key={floor}>
-                              {floors.length > 1 && (
-                                <div className="flex items-center gap-2 mb-2">
+                              {floors.length > 0 && (
+                                <div className="flex items-center gap-2 mb-2 mt-4 first:mt-0">
                                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Floor {floor}</span>
                                   <div className="flex-1 h-px bg-border/40" />
                                 </div>
@@ -316,8 +393,20 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                               <div className="flex flex-wrap gap-1.5">
                                 {fs.map((seat) => {
                                   const isSelected = selectedSeatId === seat.id;
-                                  const isDisabled = seat.status === "OCCUPIED" || seat.status === "MAINTENANCE";
-                                  const c = SEAT_STATUS_COLORS[seat.status as keyof typeof SEAT_STATUS_COLORS] ?? SEAT_STATUS_COLORS.MAINTENANCE;
+                                  
+                                  const bookedShiftsNames = Array.from(new Set(seat.students?.map(s => s.shift?.name).filter(Boolean)));
+                                  const selectedShift = shifts.find(s => s.id === selectedShiftId);
+                                  const isFullDaySelected = selectedShift?.name === "Full Day";
+                                  const isReservedForOtherShifts = isFullDaySelected && bookedShiftsNames.length > 0;
+                                  
+                                  let effectiveStatus = seat.status;
+                                  if (isReservedForOtherShifts && seat.status !== "MAINTENANCE") {
+                                    effectiveStatus = "RESERVED";
+                                  }
+                                  
+                                  const isDisabled = effectiveStatus === "OCCUPIED" || effectiveStatus === "RESERVED" || effectiveStatus === "MAINTENANCE";
+                                  const c = SEAT_STATUS_COLORS[effectiveStatus as keyof typeof SEAT_STATUS_COLORS] ?? SEAT_STATUS_COLORS.MAINTENANCE;
+                                  
                                   return (
                                     <Tooltip key={seat.id}>
                                       <TooltipTrigger asChild>
@@ -340,8 +429,9 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                                       <TooltipContent side="top" className="text-xs">
                                         <p className="font-semibold">Seat {seat.seatNumber}</p>
                                         <p className="text-muted-foreground">Floor {seat.floor}</p>
-                                        <p className={c.text}>{seat.status}</p>
-                                        {seat.students?.[0] && <p>👤 {seat.students[0].fullName}</p>}
+                                        <p className={c.text}>{effectiveStatus}</p>
+                                        {isReservedForOtherShifts && <p className="text-amber-400">Reserved for: {bookedShiftsNames.join(", ")}</p>}
+                                        {seat.students?.map((st, i) => <p key={i}>👤 {st.fullName} {st.shift?.name ? `(${st.shift.name})` : ""}</p>)}
                                       </TooltipContent>
                                     </Tooltip>
                                   );
@@ -359,10 +449,19 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                         <p className="text-xs text-indigo-400 font-medium">
                           Seat {seats.find((s) => s.id === selectedSeatId)?.seatNumber} selected
                         </p>
-                        <button type="button" onClick={() => setValue("seatId", "")} className="ml-auto text-xs text-muted-foreground hover:text-foreground">Clear</button>
+                        <button
+                          type="button"
+                          onClick={() => setValue("seatId", "", { shouldValidate: true })}
+                          className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Clear
+                        </button>
                       </div>
                     )}
                   </div>
+                  {errors.seatId && (
+                    <p className="text-xs text-destructive mt-1">⚠️ {errors.seatId.message}</p>
+                  )}
                 </div>
 
                 {/* Dates + Notes */}
@@ -390,22 +489,45 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts }
                     inputRef={monthlyFeeRef}
                     defaultValue={student?.monthlyFee}
                     required
+                    onInput={updateFeeSummary}
                   />
                   <StableFeeInput
                     label="Security Deposit (₹)"
                     inputRef={depositRef}
                     defaultValue={student?.depositAmount}
+                    onInput={updateFeeSummary}
                   />
                   <StableFeeInput
                     label="Discount (₹)"
                     inputRef={discountRef}
                     defaultValue={student?.discountAmount}
+                    onInput={updateFeeSummary}
                   />
                 </div>
 
                 <div className="p-4 rounded-xl bg-muted/40 border border-border/50 space-y-2">
                   <p className="text-sm font-semibold">Fee Summary</p>
-                  <p className="text-xs text-muted-foreground">Summary will show after you save.</p>
+                  <div className="space-y-1 text-sm" id="fee-summary-box">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Monthly Fee</span>
+                      <span id="fee-monthly-display">₹{student?.monthlyFee ? student.monthlyFee.toLocaleString("en-IN") : "0"}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Discount</span>
+                      <span id="fee-discount-display" className="text-emerald-500">
+                        − ₹{student?.discountAmount ? student.discountAmount.toLocaleString("en-IN") : "0"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-semibold border-t border-border/50 pt-1 mt-1">
+                      <span>Total Payable / Month</span>
+                      <span id="fee-total-display" className="text-indigo-400">
+                        ₹{student?.monthlyFee
+                          ? Math.max(0, (student.monthlyFee) - (student.discountAmount ?? 0)).toLocaleString("en-IN")
+                          : "0"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Live total updates as you type</p>
                 </div>
 
                 <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">

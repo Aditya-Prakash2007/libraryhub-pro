@@ -1,5 +1,6 @@
-// Middleware - Route Protection & Role-Based Access Control
+// Middleware - Route Protection & Role-Based Access Control with 48‑hour trial block
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -10,14 +11,16 @@ const publicRoutes = [
   "/forgot-password",
   "/reset-password",
   "/verify-email",
+  "/upgrade", // allow upgrade page for blocked users
 ];
 
-export default auth(function middleware(req) {
+export default auth(async function middleware(req) {
   const { nextUrl } = req;
   const session = req.auth;
   const isLoggedIn = !!session?.user;
   const userRole = session?.user?.role;
   const userStatus = session?.user?.status;
+  const libraryId = session?.user?.libraryId;
 
   const isPublicRoute =
     publicRoutes.some((route) => nextUrl.pathname === route) ||
@@ -31,33 +34,52 @@ export default auth(function middleware(req) {
 
   if (isPublicRoute) {
     if (isLoggedIn && ["/login", "/signup"].includes(nextUrl.pathname)) {
-      return NextResponse.redirect(
-        new URL(getRedirectPath(userRole), nextUrl)
-      );
+      return NextResponse.redirect(new URL(getRedirectPath(userRole), nextUrl));
     }
     return NextResponse.next();
   }
 
   if (!isLoggedIn) {
     const callbackUrl = encodeURIComponent(nextUrl.pathname + nextUrl.search);
-    return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${callbackUrl}`, nextUrl)
-    );
+    return NextResponse.redirect(new URL(`/login?callbackUrl=${callbackUrl}`, nextUrl));
   }
 
+  // Block suspended accounts
   if (userStatus === "SUSPENDED") {
-    return NextResponse.redirect(
-      new URL("/login?error=suspended", nextUrl)
-    );
+    return NextResponse.redirect(new URL("/login?error=suspended", nextUrl));
   }
 
+  // ----- 48‑hour trial expiration block -----
+  let library = null;
+  if (libraryId) {
+    try {
+      library = await prisma.library.findUnique({
+        where: { id: libraryId },
+        select: {
+          trialEndsAt: true,
+          isTrialActive: true,
+          subscription: { select: { status: true } },
+        },
+      });
+    } catch (error) {
+      // Log the error but do not block the request – allow normal flow
+      console.error('Middleware: failed to fetch library for trial check', error);
+    }
+    const now = new Date();
+    const trialEnded = library?.trialEndsAt && now > library.trialEndsAt;
+    const hasActiveSub = library?.subscription?.status === "ACTIVE";
+    if (trialEnded && !hasActiveSub && !nextUrl.pathname.startsWith("/upgrade")) {
+      // redirect all non‑upgrade pages to the upgrade page
+      return NextResponse.redirect(new URL("/upgrade", nextUrl));
+    }
+  }
+
+  // Role based access control
   if (
     nextUrl.pathname.startsWith("/superadmin") &&
     userRole !== "SUPER_ADMIN"
   ) {
-    return NextResponse.redirect(
-      new URL("/login?error=unauthorized", nextUrl)
-    );
+    return NextResponse.redirect(new URL("/login?error=unauthorized", nextUrl));
   }
 
   if (
@@ -65,18 +87,14 @@ export default auth(function middleware(req) {
     userRole !== "LIBRARY_ADMIN" &&
     userRole !== "SUPER_ADMIN"
   ) {
-    return NextResponse.redirect(
-      new URL("/login?error=unauthorized", nextUrl)
-    );
+    return NextResponse.redirect(new URL("/login?error=unauthorized", nextUrl));
   }
 
   if (
     nextUrl.pathname.startsWith("/student") &&
     userRole !== "STUDENT"
   ) {
-    return NextResponse.redirect(
-      new URL(getRedirectPath(userRole), nextUrl)
-    );
+    return NextResponse.redirect(new URL(getRedirectPath(userRole), nextUrl));
   }
 
   return NextResponse.next();

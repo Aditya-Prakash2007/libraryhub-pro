@@ -6,6 +6,7 @@ import { generateStudentId } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { sendWelcomeEmail } from "@/services/brevo";
+import { sendWelcomeWhatsApp } from "@/services/whatsapp";
 import type { StudentFormData } from "@/schemas";
 
 async function getAdminLibraryId(): Promise<string | null> {
@@ -47,7 +48,7 @@ export async function getStudents(params?: {
       prisma.student.findMany({
         where,
         include: {
-          seat: { select: { seatNumber: true } },
+          seat: { select: { seatNumber: true, floor: true } },
           shift: { select: { name: true, startTime: true, endTime: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -115,9 +116,21 @@ export async function createStudent(data: StudentFormData) {
     if (existingStudent) return { error: "A student with this email already exists" };
 
     // Check if user account with this email exists
-    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
-    if (existingUser && existingUser.role !== "STUDENT") {
-      return { error: "This email is already registered as an admin account" };
+    const existingUser = await prisma.user.findUnique({ 
+      where: { email: data.email },
+      include: { student: true }
+    });
+    if (existingUser) {
+      if (existingUser.role !== "STUDENT") {
+        return { error: "This email is already registered as an admin account" };
+      }
+      if (existingUser.student) {
+        if (existingUser.student.libraryId === libraryId) {
+          return { error: "A student with this email already exists in your library" };
+        } else {
+          return { error: "This email is already registered to a student in another library" };
+        }
+      }
     }
 
     // Generate student ID
@@ -213,6 +226,13 @@ export async function createStudent(data: StudentFormData) {
     // Send welcome email with login info
     await sendWelcomeEmail(
       data.email,
+      data.fullName,
+      library.name
+    ).catch(() => {});
+
+    // Send WhatsApp welcome message
+    await sendWelcomeWhatsApp(
+      data.phone,
       data.fullName,
       library.name
     ).catch(() => {});

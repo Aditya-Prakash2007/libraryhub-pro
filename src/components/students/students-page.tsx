@@ -61,7 +61,7 @@ interface StudentRow {
   notes?: string | null;
   discountAmount?: number;
   depositAmount?: number;
-  seat?: { seatNumber: string } | null;
+  seat?: { seatNumber: string; floor?: number } | null;
   shift?: { name: string; startTime: string; endTime: string } | null;
 }
 
@@ -73,21 +73,26 @@ interface ShiftOption {
   color: string;
 }
 
+import { useSearchParams } from "next/navigation";
+
 export function StudentsPage() {
+  const searchParams = useSearchParams();
   const [students, setStudents] = useState<StudentRow[]>([]);
-  const [shifts, setShifts] = useState<ShiftOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "all");
   const [shiftFilter, setShiftFilter] = useState("all");
-  const [paymentFilter, setPaymentFilter] = useState("all");
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [paymentFilter, setPaymentFilter] = useState(searchParams.get("payment") || "all");
+  // Auto-open add dialog if ?action=add is in URL
+  const [addDialogOpen, setAddDialogOpen] = useState(searchParams.get("action") === "add");
   const [editStudent, setEditStudent] = useState<StudentRow | null>(null);
   const [viewStudentId, setViewStudentId] = useState<string | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  // Shifts for filter dropdown only (not for dialog — dialog loads fresh)
+  const [filterShifts, setFilterShifts] = useState<ShiftOption[]>([]);
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
@@ -113,7 +118,7 @@ export function StudentsPage() {
 
   useEffect(() => {
     getShifts().then((r) => {
-      if (!("error" in r)) setShifts(r.shifts as unknown as ShiftOption[]);
+      if (!("error" in r)) setFilterShifts(r.shifts as unknown as ShiftOption[]);
     });
   }, []);
 
@@ -226,7 +231,7 @@ export function StudentsPage() {
       header: "Seat / Shift",
       cell: (row) => (
         <div>
-          <p className="text-sm font-medium">{row.seat?.seatNumber ?? "—"}</p>
+          <p className="text-sm font-medium">{row.seat?.seatNumber ? `${row.seat.seatNumber} (F${row.seat.floor || '-'})` : "—"}</p>
           <p className="text-xs text-muted-foreground">{row.shift?.name ?? "No shift"}</p>
         </div>
       ),
@@ -332,7 +337,7 @@ export function StudentsPage() {
               <SelectTrigger className="w-36"><SelectValue placeholder="Shift" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Shifts</SelectItem>
-                {shifts.map((s) => (
+                {filterShifts.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -369,7 +374,6 @@ export function StudentsPage() {
         }}
         student={editStudent ? buildEditData(editStudent) : null}
         onSuccess={() => { setAddDialogOpen(false); setEditStudent(null); loadStudents(); }}
-        shifts={shifts}
       />
 
       {viewStudentId && (

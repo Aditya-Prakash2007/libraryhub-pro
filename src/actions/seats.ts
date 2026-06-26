@@ -19,7 +19,7 @@ export async function getSeats(shiftId?: string) {
     const seats = await prisma.seat.findMany({
       where: {
         libraryId,
-        ...(shiftId && shiftId !== "all" && { shiftId }),
+        ...(shiftId && shiftId !== "all" ? { OR: [{ shiftId }, { shiftId: null }] } : {}),
       },
       include: {
         students: {
@@ -28,9 +28,10 @@ export async function getSeats(shiftId?: string) {
             fullName: true,
             studentId: true,
             profilePhoto: true,
+            shift: { select: { id: true, name: true, color: true } },
           },
           where: { status: "ACTIVE" },
-          take: 1,
+          take: 3,
         },
         shift: { select: { name: true, color: true } },
       },
@@ -99,7 +100,8 @@ export async function bulkCreateSeats(
 
     const seats = [];
     for (let i = startNum; i <= endNum; i++) {
-      const seatNumber = `${prefix}${String(i).padStart(2, "0")}`;
+      // Empty prefix = pure sequential numbers (1, 2, 3...)
+      const seatNumber = prefix ? `${prefix}${String(i).padStart(2, "0")}` : String(i).padStart(2, "0");
       seats.push({
         seatNumber,
         floor,
@@ -111,9 +113,7 @@ export async function bulkCreateSeats(
       });
     }
 
-    await prisma.seat.createMany({
-      data: seats,
-    });
+    await prisma.seat.createMany({ data: seats });
 
     await prisma.library.update({
       where: { id: libraryId },
@@ -254,5 +254,46 @@ export async function deleteSeat(id: string) {
   } catch (error) {
     console.error("Delete seat error:", error);
     return { error: "Failed to delete seat" };
+  }
+}
+
+// Bulk delete seats
+export async function bulkDeleteSeats(floor?: number) {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const whereClause: any = { libraryId };
+    if (floor !== undefined && floor > 0) {
+      whereClause.floor = floor;
+    }
+
+    const seatsToDelete = await prisma.seat.findMany({
+      where: whereClause,
+      include: { students: { where: { status: "ACTIVE" } } },
+    });
+
+    const deletableSeatIds = seatsToDelete
+      .filter((s) => s.students.length === 0)
+      .map((s) => s.id);
+
+    if (deletableSeatIds.length === 0) {
+      return { error: "No available seats found to delete. Seats with assigned students cannot be deleted." };
+    }
+
+    await prisma.seat.deleteMany({
+      where: { id: { in: deletableSeatIds } },
+    });
+
+    await prisma.library.update({
+      where: { id: libraryId },
+      data: { totalSeats: { decrement: deletableSeatIds.length } },
+    });
+
+    revalidatePath("/admin/seats");
+    return { success: true, count: deletableSeatIds.length };
+  } catch (error) {
+    console.error("Bulk delete seats error:", error);
+    return { error: "Failed to delete seats" };
   }
 }

@@ -72,6 +72,7 @@ export interface StudentFeeRow {
   fullName: string;
   phone: string;
   monthlyFee: number;
+  discountAmount?: number | null;
   joiningDate: Date;
   lastPaymentDate: Date | null;
   paymentStatus: string;
@@ -82,10 +83,13 @@ export interface StudentFeeRow {
 export function buildDueFeeRows(students: StudentFeeRow[]): (StudentFeeRow & FeeCalculation)[] {
   const today = new Date();
   return students
-    .map((s) => ({
-      ...s,
-      ...calculateDueFee(s.joiningDate, s.monthlyFee, s.lastPaymentDate, today),
-    }))
+    .map((s) => {
+      const expectedFee = Math.max(0, s.monthlyFee - (s.discountAmount || 0));
+      return {
+        ...s,
+        ...calculateDueFee(s.joiningDate, expectedFee, s.lastPaymentDate, today),
+      };
+    })
     .filter((s) => s.pendingMonths > 0)
     .sort((a, b) => b.pendingMonths - a.pendingMonths);
 }

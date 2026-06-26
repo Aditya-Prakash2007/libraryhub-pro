@@ -114,8 +114,8 @@ export function StatsCard({
 
           <p className="text-2xl font-bold mb-1">{displayValue}</p>
 
-          {change !== undefined && (
-            <div className="flex items-center gap-1.5">
+          {change !== undefined ? (
+            <div className="flex items-center gap-1.5 mt-1">
               <span
                 className={cn(
                   "flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full",
@@ -139,6 +139,8 @@ export function StatsCard({
                 <span className="text-xs text-muted-foreground">{changeLabel}</span>
               )}
             </div>
+          ) : (
+            <div className="h-[22px] mt-1" />
           )}
         </div>
       </Card>

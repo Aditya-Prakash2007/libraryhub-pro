@@ -27,6 +27,8 @@ export async function saveLibrarySettings(data: LibrarySettingsFormData) {
       secondaryColor: data.secondaryColor,
       currency: data.currency,
       timezone: data.timezone,
+      upiId: data.upiId || null,
+      customQrCode: data.customQrCode || null,
     },
   });
 

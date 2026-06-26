@@ -30,6 +30,8 @@ interface StudentProps {
     status: string;
     paymentStatus: string;
     monthlyFee: number;
+    discountAmount?: number | null;
+    depositAmount?: number | null;
     joiningDate: Date;
     expiryDate?: Date | null;
     attendancePercentage: number;
@@ -40,7 +42,7 @@ interface StudentProps {
     libraryId: string;
     seat?: { seatNumber: string; floor: number } | null;
     shift?: { name: string; startTime: string; endTime: string; color: string } | null;
-    payments: { id: string; paymentId: string; amount: number; status: string; paymentType: string; paidAt?: Date | null; createdAt: Date }[];
+    payments: { id: string; paymentId: string; amount: number; totalAmount: number; lateFee?: number | null; status: string; paymentType: string; paidAt?: Date | null; createdAt: Date }[];
     attendance: { id: string; date: Date; status: string }[];
     notifications: { id: string; title: string; message: string; createdAt: Date }[];
   } | null;
@@ -56,6 +58,7 @@ export function StudentDashboard({ student }: StudentProps) {
   const daysLeft = s?.expiryDate ? daysUntilExpiry(s.expiryDate) : null;
   const isExpiringSoon = daysLeft !== null && daysLeft <= 7 && daysLeft > 0;
   const isExpired = daysLeft !== null && daysLeft <= 0;
+  const effectiveFee = s ? Math.max(0, s.monthlyFee - (s.discountAmount || 0)) : 0;
 
   const handleShowQR = async () => {
     if (!s) return;
@@ -175,10 +178,10 @@ export function StudentDashboard({ student }: StudentProps) {
           },
           {
             label: "Monthly Fee",
-            value: formatCurrency(s.monthlyFee),
+            value: formatCurrency(effectiveFee),
             icon: CreditCard,
-            sub: s.paymentStatus === "PAID" ? "✅ Paid" : "⚠️ Pending",
-            color: "text-emerald-500 bg-emerald-500/10",
+            sub: s.paymentStatus === "PAID" ? "✅ Paid" : s.paymentStatus === "PARTIAL" ? "⚠️ Partial" : "⚠️ Pending",
+            color: s.paymentStatus === "PAID" ? "text-emerald-500 bg-emerald-500/10" : "text-amber-500 bg-amber-500/10",
           },
           {
             label: "Streak",
@@ -281,22 +284,34 @@ export function StudentDashboard({ student }: StudentProps) {
               <div className="py-8 text-center text-muted-foreground text-sm">No payments yet</div>
             ) : (
               <div className="space-y-2">
-                {s.payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-lg border border-border/50">
+                {s.payments.map((p) => {
+                  const remaining = p.status === "PARTIAL" && p.lateFee ? p.lateFee : 0;
+                  return (
+                  <div key={p.id} className="flex items-start justify-between p-3 rounded-lg border border-border/50">
                     <div>
-                      <p className="text-sm font-medium">{p.paymentType.replace("_", " ")}</p>
+                      <p className="text-sm font-medium">{p.paymentType.replace(/_/g, " ")}</p>
                       <p className="text-xs text-muted-foreground">
                         {p.paidAt ? formatDate(p.paidAt) : formatDate(p.createdAt)}
                       </p>
+                      {p.status === "PARTIAL" && remaining > 0 && (
+                        <div className="mt-1 text-[11px] bg-orange-500/10 border border-orange-500/20 rounded-md px-2 py-1 space-y-0.5">
+                          <p className="text-emerald-500 font-medium">✅ Jama: {formatCurrency(p.amount)}</p>
+                          <p className="text-orange-500 font-medium">⏳ Baaki: {formatCurrency(remaining)}</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-sm">{formatCurrency(p.amount)}</p>
-                      <span className={`text-xs ${p.status === "PAID" ? "text-emerald-500" : "text-amber-500"}`}>
+                    <div className="text-right shrink-0">
+                      <p className="font-semibold text-sm">{formatCurrency(p.totalAmount ?? p.amount)}</p>
+                      <span className={`text-xs font-medium ${
+                        p.status === "PAID" ? "text-emerald-500" :
+                        p.status === "PARTIAL" ? "text-orange-500" : "text-amber-500"
+                      }`}>
                         {p.status}
                       </span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

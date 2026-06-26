@@ -66,11 +66,11 @@ export const studentSchema = z.object({
   gender: z.string().optional(),
   occupation: z.string().optional(),
   institution: z.string().optional(),
-  seatId: z.string().optional(),
-  shiftId: z.string().optional(),
+  seatId: z.string().min(1, "Seat selection is required"),
+  shiftId: z.string().min(1, "Shift selection is required"),
   joiningDate: z.string().optional(),
   expiryDate: z.string().optional(),
-  monthlyFee: z.number().min(0, "Fee cannot be negative"),
+  monthlyFee: z.number().optional(),
   depositAmount: z.number().min(0).optional(),
   discountAmount: z.number().min(0).optional(),
   notes: z.string().optional(),
@@ -155,6 +155,8 @@ export const librarySettingsSchema = z.object({
   secondaryColor: z.string(),
   currency: z.string(),
   timezone: z.string(),
+  upiId: z.string().optional().or(z.literal("")),
+  customQrCode: z.string().optional().or(z.literal("")),
 });
 
 export type LibrarySettingsFormData = z.infer<typeof librarySettingsSchema>;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Building2, Bell, Shield, Palette, Save, Info, CreditCard } from "lucide-react";
+import { Building2, Bell, Shield, Palette, Save, Info, CreditCard, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +47,8 @@ interface Library {
   razorpayKeyId?: string | null;
   razorpaySecret?: string | null;
   hasRazorpaySecret?: boolean;
+  upiId?: string | null;
+  customQrCode?: string | null;
   settings?: LibrarySettings | null;
 }
 
@@ -71,6 +73,8 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
       secondaryColor: library?.secondaryColor || "#8b5cf6",
       currency: library?.currency || "INR",
       timezone: library?.timezone || "Asia/Kolkata",
+      upiId: library?.upiId || "",
+      customQrCode: library?.customQrCode || "",
     },
   });
 
@@ -164,12 +168,56 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
             </Card>
           </TabsContent>
 
-          {/* ── Payments / Razorpay ── */}
+          {/* ── Payments / Razorpay & Custom QR ── */}
           <TabsContent value="payments">
-            <RazorpaySettings
-              razorpayKeyId={library?.razorpayKeyId}
-              hasSecret={library?.hasRazorpaySecret}
-            />
+            <div className="space-y-6">
+              <RazorpaySettings
+                razorpayKeyId={library?.razorpayKeyId}
+                hasSecret={library?.hasRazorpaySecret}
+              />
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <QrCode className="w-5 h-5 text-indigo-500" />
+                    Custom UPI QR / Payment Settings
+                  </CardTitle>
+                  <CardDescription>
+                    Add your UPI ID or a custom payment QR code image link so students can pay you directly via UPI.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>UPI ID (for dynamic QR generation)</Label>
+                      <Input
+                        placeholder="e.g. libraryname@okaxis"
+                        {...register("upiId")}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        If set, a dynamic UPI QR code will be auto-generated for students to scan.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Custom QR Image URL</Label>
+                      <Input
+                        placeholder="e.g. https://example.com/your-qr.png"
+                        {...register("customQrCode")}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Or paste a link to your payment QR code image.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button type="button" loading={saving} onClick={handleSubmit(onSubmit)}>
+                    <Save className="w-4 h-4" />
+                    Save UPI Settings
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* ── Notifications ── */}

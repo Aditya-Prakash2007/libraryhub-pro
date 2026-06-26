@@ -22,9 +22,9 @@ export default async function StudentPaymentsPageRoute() {
     ? await prisma.student.findUnique({
         where: { id: session.user.studentId },
         select: {
-          id: true, fullName: true, monthlyFee: true,
+          id: true, fullName: true, monthlyFee: true, discountAmount: true,
           paymentStatus: true, expiryDate: true, libraryId: true,
-          library: { select: { name: true } },
+          library: { select: { name: true, upiId: true, customQrCode: true, primaryColor: true } },
         },
       })
     : null;

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, CreditCard, TrendingUp, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { Plus, QrCode, RefreshCw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -13,6 +14,7 @@ import {
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { RecordPaymentDialog } from "./record-payment-dialog";
+import { LibraryPaymentQR } from "./library-payment-qr";
 import { getPayments } from "@/actions/payments";
 import { formatCurrency, formatDateTime, getInitials } from "@/lib/utils";
 import type { Column } from "@/components/shared/data-table";
@@ -25,20 +27,39 @@ interface Payment {
   paymentType: string;
   paymentMode: string;
   status: string;
+  lateFee?: number | null;
   paidAt?: Date | null;
   createdAt: Date;
   student: { fullName: string; studentId: string; profilePhoto?: string | null };
   invoice?: { invoiceNumber: string } | null;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  PAID:     "bg-emerald-500/15 text-emerald-500",
+  PENDING:  "bg-amber-500/15 text-amber-500",
+  PARTIAL:  "bg-orange-500/15 text-orange-400",
+  OVERDUE:  "bg-rose-500/15 text-rose-500",
+  FAILED:   "bg-rose-600/15 text-rose-600",
+  REFUNDED: "bg-blue-500/15 text-blue-500",
+};
+
+const STATUS_ICONS: Record<string, string> = {
+  PAID: "✅", PENDING: "⏳", PARTIAL: "🟡",
+  OVERDUE: "🔴", FAILED: "❌", REFUNDED: "↩️",
+};
+
 export function PaymentsPage() {
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  // Auto-open Record Payment dialog if ?action=add is in URL
+  const [addDialogOpen, setAddDialogOpen] = useState(searchParams.get("action") === "add");
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
@@ -55,20 +76,11 @@ export function PaymentsPage() {
 
   useEffect(() => { loadPayments(); }, [loadPayments]);
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      PAID: "bg-emerald-500/15 text-emerald-500",
-      PENDING: "bg-amber-500/15 text-amber-500",
-      OVERDUE: "bg-rose-500/15 text-rose-500",
-      FAILED: "bg-rose-600/15 text-rose-600",
-      REFUNDED: "bg-blue-500/15 text-blue-500",
-    };
-    return (
-      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${map[status] || "bg-muted text-muted-foreground"}`}>
-        {status}
-      </span>
-    );
-  };
+  const statusBadge = (status: string) => (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] || "bg-muted text-muted-foreground"}`}>
+      {STATUS_ICONS[status] || ""} {status}
+    </span>
+  );
 
   const columns: Column<Payment>[] = [
     {
@@ -102,7 +114,7 @@ export function PaymentsPage() {
       header: "Type",
       cell: (row) => (
         <div>
-          <p className="text-sm">{row.paymentType.replace("_", " ")}</p>
+          <p className="text-sm">{row.paymentType.replace(/_/g, " ")}</p>
           <p className="text-xs text-muted-foreground">{row.paymentMode}</p>
         </div>
       ),
@@ -111,10 +123,26 @@ export function PaymentsPage() {
       key: "amount",
       header: "Amount",
       cell: (row) => (
-        <p className="font-semibold text-sm">{formatCurrency(row.totalAmount)}</p>
+        <div>
+          <p className="font-semibold text-sm">{formatCurrency(row.totalAmount)}</p>
+          {row.status === "PARTIAL" && row.lateFee ? (
+            <div className="mt-0.5 text-[10px] space-y-0.5">
+              <p className="text-emerald-500">✅ Paid: {formatCurrency(row.totalAmount)}</p>
+              <p className="text-orange-500 font-medium">⏳ Due: {formatCurrency(row.lateFee)}</p>
+            </div>
+          ) : null}
+        </div>
       ),
     },
-    { key: "status", header: "Status", cell: (row) => statusBadge(row.status) },
+    {
+      key: "status",
+      header: "Status",
+      cell: (row) => (
+        <div className="space-y-1">
+          {statusBadge(row.status)}
+        </div>
+      ),
+    },
     {
       key: "date",
       header: "Date",
@@ -124,6 +152,24 @@ export function PaymentsPage() {
         </p>
       ),
     },
+    {
+      key: "receipt",
+      header: "",
+      cell: (row) =>
+        row.invoice ? (
+          <a
+            href={`/api/receipt/${row.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download Receipt"
+          >
+            <Button variant="ghost" size="icon" className="w-7 h-7">
+              <Download className="w-3.5 h-3.5" />
+            </Button>
+          </a>
+        ) : null,
+      className: "w-10",
+    },
   ];
 
   return (
@@ -132,26 +178,32 @@ export function PaymentsPage() {
         <Button variant="outline" size="sm" onClick={loadPayments}>
           <RefreshCw className="w-4 h-4" />
         </Button>
+        <Button variant="outline" size="sm" onClick={() => setQrDialogOpen(true)}>
+          <QrCode className="w-4 h-4" />
+          Payment QR
+        </Button>
         <Button size="sm" onClick={() => setAddDialogOpen(true)}>
           <Plus className="w-4 h-4" />
           Record Payment
         </Button>
       </PageHeader>
 
-      {/* Filter */}
+      {/* Filters — all statuses including PARTIAL & FAILED */}
       <Card>
         <CardContent className="pt-4 pb-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-44">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="PAID">Paid</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="OVERDUE">Overdue</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
+                <SelectItem value="PAID">✅ Paid</SelectItem>
+                <SelectItem value="PENDING">⏳ Pending</SelectItem>
+                <SelectItem value="PARTIAL">🟡 Partial (Dues)</SelectItem>
+                <SelectItem value="OVERDUE">🔴 Overdue</SelectItem>
+                <SelectItem value="FAILED">❌ Failed</SelectItem>
+                <SelectItem value="REFUNDED">↩️ Refunded</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -172,6 +224,19 @@ export function PaymentsPage() {
         onOpenChange={setAddDialogOpen}
         onSuccess={() => { setAddDialogOpen(false); loadPayments(); }}
       />
+
+      {/* Library Payment QR — only for admin with libraryId */}
+      {session?.user?.libraryId && (
+        <LibraryPaymentQR
+          open={qrDialogOpen}
+          onOpenChange={setQrDialogOpen}
+          library={{
+            id: session.user.libraryId,
+            name: session.user.name || "Your Library",
+            primaryColor: "#6366f1",
+          }}
+        />
+      )}
     </div>
   );
 }

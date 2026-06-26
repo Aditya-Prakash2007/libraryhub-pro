@@ -22,6 +22,7 @@ export async function syncDueFees() {
         id: true,
         joiningDate: true,
         monthlyFee: true,
+        discountAmount: true,
         lastPaymentDate: true,
         payments: {
           where: { status: "PAID" },
@@ -40,9 +41,11 @@ export async function syncDueFees() {
         ?? student.payments[0]?.paidAt
         ?? null;
 
+      const expectedFee = Math.max(0, student.monthlyFee - (student.discountAmount || 0));
+
       const fee = calculateDueFee(
         student.joiningDate,
-        student.monthlyFee,
+        expectedFee,
         lastPaidDate,
         today
       );

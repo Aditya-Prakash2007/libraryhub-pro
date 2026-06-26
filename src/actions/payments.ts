@@ -230,6 +230,25 @@ export async function recordManualPayment(data: {
     const paymentId = generateUniquePaymentId();
     const invoiceNumber = generateUniqueInvoiceNumber();
 
+    // Get student's monthly fee to determine if payment is partial
+    const student = await prisma.student.findUnique({
+      where: { id: data.studentId },
+      select: { monthlyFee: true, discountAmount: true },
+    });
+
+    const expectedFee = student
+      ? Math.max(0, (student.monthlyFee || 0) - (student.discountAmount || 0))
+      : data.amount;
+
+    // Determine payment status: PARTIAL if paid less than expected, PAID if full
+    const isPartial = data.amount < expectedFee;
+    const balanceDue = isPartial ? expectedFee - data.amount : 0;
+    const paymentStatus = isPartial ? "PARTIAL" : "PAID";
+
+    const now = new Date();
+    const nextDue = new Date(now);
+    nextDue.setMonth(nextDue.getMonth() + 1);
+
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       const payment = await tx.payment.create({
         data: {
@@ -239,13 +258,18 @@ export async function recordManualPayment(data: {
           amount: data.amount,
           paymentType: data.paymentType as "MONTHLY" | "QUARTERLY" | "HALF_YEARLY" | "YEARLY" | "REGISTRATION" | "LATE_FEE" | "OTHER",
           paymentMode: data.paymentMode,
-          status: "PAID",
-          paidAt: new Date(),
-          description: data.description,
+          status: paymentStatus,
+          paidAt: now,
+          description: isPartial
+            ? `${data.description || "Library Fee"} (Partial — ₹${balanceDue} due)`
+            : data.description,
           periodStart: data.periodStart ? new Date(data.periodStart) : undefined,
           periodEnd: data.periodEnd ? new Date(data.periodEnd) : undefined,
-          notes: data.notes,
+          notes: isPartial
+            ? `Partial payment. Balance due: ₹${balanceDue}. ${data.notes || ""}`
+            : data.notes,
           totalAmount: data.amount,
+          lateFee: balanceDue, // store balance due in lateFee field
         },
       });
 
@@ -257,27 +281,49 @@ export async function recordManualPayment(data: {
           libraryId,
           amount: data.amount,
           total: data.amount,
-          status: "PAID",
-          paidAt: new Date(),
+          status: paymentStatus,
+          paidAt: now,
           items: [
             {
-              description: data.description || "Library Fee",
+              description: isPartial
+                ? `${data.description || "Library Fee"} (Partial payment — ₹${balanceDue} pending)`
+                : data.description || "Library Fee",
               quantity: 1,
-              rate: data.amount,
+              rate: expectedFee,
               amount: data.amount,
             },
           ],
         },
       });
 
+      // Update student payment status
+      // PARTIAL = dues exist, PAID = fully paid
       await tx.student.update({
         where: { id: data.studentId },
-        data: { paymentStatus: "PAID" },
+        data: {
+          paymentStatus: isPartial ? "PARTIAL" : "PAID",
+          lastPaymentDate: now,
+          ...(isPartial ? {
+            // Keep dues tracking
+            totalDueAmount: balanceDue,
+            pendingMonths: 0, // current month partially paid
+          } : {
+            nextDueDate: nextDue,
+            pendingMonths: 0,
+            totalDueAmount: 0,
+          }),
+        },
       });
     });
 
     revalidatePath("/admin/payments");
-    return { success: true };
+    return {
+      success: true,
+      isPartial,
+      amountPaid: data.amount,
+      balanceDue,
+      paymentStatus,
+    };
   } catch (error) {
     console.error("Record manual payment error:", error);
     return { error: "Failed to record payment" };

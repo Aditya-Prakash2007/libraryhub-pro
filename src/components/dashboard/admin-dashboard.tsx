@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { getRevenueAnalytics } from "@/actions/payments";
 import { DueFeesDialog } from "@/components/dashboard/due-fees-dialog";
+import Link from "next/link";
 
 interface DashboardStats {
   totalStudents: number;
@@ -39,7 +40,10 @@ interface DashboardStats {
 
 const COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd"];
 
+import { useRouter } from "next/navigation";
+
 export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
+  const router = useRouter();
   const [revenueData, setRevenueData] = useState<{ date: string; revenue: number }[]>([]);
   const [revenuePeriod, setRevenuePeriod] = useState<"week" | "month" | "year">("month");
   const [loading, setLoading] = useState(false);
@@ -113,6 +117,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           change={8}
           changeLabel="vs last month"
           index={0}
+          onClick={() => router.push("/admin/students")}
         />
         <StatsCard
           title="Occupied Seats"
@@ -121,6 +126,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           suffix={s ? `/${s.totalSeats}` : ""}
           color="violet"
           index={1}
+          onClick={() => router.push("/admin/seats")}
         />
         <StatsCard
           title="Revenue Today"
@@ -129,6 +135,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           color="emerald"
           isCurrency
           index={2}
+          onClick={() => router.push("/admin/payments")}
         />
         <StatsCard
           title="Monthly Revenue"
@@ -139,6 +146,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           change={12}
           changeLabel="vs last month"
           index={3}
+          onClick={() => router.push("/admin/payments")}
         />
       </div>
 
@@ -149,6 +157,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           icon={CalendarCheck}
           color="amber"
           index={4}
+          onClick={() => router.push("/admin/attendance")}
         />
         <StatsCard
           title="Pending Fees"
@@ -164,6 +173,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           icon={CheckCircle2}
           color="emerald"
           index={6}
+          onClick={() => router.push("/admin/students?status=ACTIVE")}
         />
         <StatsCard
           title="Overdue Students"
@@ -171,6 +181,7 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
           icon={Clock}
           color="rose"
           index={7}
+          onClick={() => router.push("/admin/students?payment=OVERDUE")}
         />
       </div>
 
@@ -347,16 +358,16 @@ export function AdminDashboard({ stats }: { stats: DashboardStats | null }) {
               { label: "Mark Attendance", href: "/admin/attendance", icon: CalendarCheck, color: "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20" },
               { label: "Record Payment", href: "/admin/payments?action=add", icon: CreditCard, color: "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20" },
               { label: "View Reports", href: "/admin/reports", icon: BarChart3, color: "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20" },
-              { label: "Send Notice", href: "/admin/notifications?action=send", icon: Activity, color: "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" },
+              { label: "Send Notice", href: "/admin/notifications", icon: Activity, color: "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" },
             ].map((action) => (
-              <a
+              <Link
                 key={action.label}
                 href={action.href}
                 className={`flex items-center gap-3 p-3 rounded-xl transition-colors cursor-pointer ${action.color}`}
               >
                 <action.icon className="w-4 h-4 shrink-0" />
                 <span className="text-sm font-medium">{action.label}</span>
-              </a>
+              </Link>
             ))}
           </CardContent>
         </Card>

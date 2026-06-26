@@ -282,6 +282,8 @@ model Library {
   timezone         String         @default("Asia/Kolkata")
   razorpayKeyId    String?
   razorpaySecret   String?
+  upiId            String?
+  customQrCode     String?
   smtpConfig       Json?
   whatsappConfig   Json?
   smsConfig        Json?

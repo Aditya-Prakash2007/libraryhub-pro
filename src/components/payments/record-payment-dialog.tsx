@@ -79,7 +79,14 @@ export function RecordPaymentDialog({
     if ("error" in result) {
       toast.error(result.error);
     } else {
-      toast.success("Payment recorded successfully");
+      if (result.isPartial) {
+        toast.warning(
+          `Partial payment recorded. ₹${result.balanceDue} balance due.`,
+          { duration: 5000 }
+        );
+      } else {
+        toast.success("Payment recorded successfully");
+      }
       reset();
       onSuccess();
     }
@@ -147,11 +154,17 @@ export function RecordPaymentDialog({
             <Input
               type="number"
               step="0.01"
-              placeholder={selectedStudent ? String(selectedStudent.monthlyFee) : "0"}
+              placeholder={selectedStudent ? String(Math.max(0, selectedStudent.monthlyFee)) : "0"}
               {...register("amount", { valueAsNumber: true })}
               className={errors.amount ? "border-destructive" : ""}
             />
             {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
+            {selectedStudent && (
+              <p className="text-xs text-muted-foreground">
+                Expected: ₹{Math.max(0, selectedStudent.monthlyFee).toLocaleString("en-IN")}/month
+                {" "}— partial amount will show as dues
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

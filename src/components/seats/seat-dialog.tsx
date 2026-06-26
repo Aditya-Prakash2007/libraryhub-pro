@@ -21,19 +21,21 @@ interface SeatDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
-  shifts: { id: string; name: string }[];
+  existingSeatCount?: number;
 }
 
-export function SeatDialog({ open, onOpenChange, onSuccess, shifts }: SeatDialogProps) {
+export function SeatDialog({ open, onOpenChange, onSuccess, existingSeatCount = 0 }: SeatDialogProps) {
   const [loading, setLoading] = useState(false);
+  const nextSeatNum = existingSeatCount + 1;
   const { register, handleSubmit, setValue, formState: { errors }, reset } = useForm<SeatFormData>({
     resolver: zodResolver(seatSchema) as import("react-hook-form").Resolver<SeatFormData>,
-    defaultValues: { floor: 1, status: "AVAILABLE", seatType: "STANDARD" },
+    defaultValues: { floor: 1, status: "AVAILABLE", seatType: "STANDARD", seatNumber: String(nextSeatNum).padStart(2, "0") },
   });
 
   const onSubmit = async (data: SeatFormData) => {
     setLoading(true);
-    const result = await createSeat(data);
+    // Ensure seatNumber is pure numeric string
+    const result = await createSeat({ ...data, seatNumber: data.seatNumber });
     if ("error" in result) {
       toast.error(result.error);
     } else {
@@ -46,15 +48,20 @@ export function SeatDialog({ open, onOpenChange, onSuccess, shifts }: SeatDialog
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add New Seat</DialogTitle>
+          <DialogTitle>Add Single Seat</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Seat Number *</Label>
-              <Input placeholder="A01" {...register("seatNumber")} className={errors.seatNumber ? "border-destructive" : ""} />
+              <Input
+                type="text"
+                placeholder={String(nextSeatNum).padStart(2, '0')}
+                {...register("seatNumber")}
+                className={errors.seatNumber ? "border-destructive" : ""}
+              />
               {errors.seatNumber && <p className="text-xs text-destructive">{errors.seatNumber.message}</p>}
             </div>
             <div className="space-y-1.5">
@@ -73,19 +80,6 @@ export function SeatDialog({ open, onOpenChange, onSuccess, shifts }: SeatDialog
                 <SelectItem value="WINDOW">Window</SelectItem>
                 <SelectItem value="CORNER">Corner</SelectItem>
                 <SelectItem value="POWER_OUTLET">Power Outlet</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Shift (Optional)</Label>
-            <Select onValueChange={(v) => setValue("shiftId", v)}>
-              <SelectTrigger><SelectValue placeholder="All shifts" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">All shifts</SelectItem>
-                {shifts.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
               </SelectContent>
             </Select>
           </div>

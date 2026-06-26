@@ -122,6 +122,7 @@ export async function sendSubscriptionReminders() {
 // Send fee reminders to students
 export async function sendStudentFeeReminders() {
   const { sendFeeReminderEmail } = await import("@/services/brevo");
+  const { sendFeeReminderWhatsApp } = await import("@/services/whatsapp");
   const now = new Date();
   let sent = 0;
 
@@ -162,6 +163,17 @@ export async function sendStudentFeeReminders() {
         student.monthlyFee,
         dueDateStr
       ).catch(() => {});
+
+      if (student.phone) {
+        await sendFeeReminderWhatsApp(
+          student.phone,
+          student.fullName,
+          student.library.name,
+          daysAhead,
+          student.monthlyFee,
+          dueDateStr
+        ).catch(() => {});
+      }
 
       sent++;
     }

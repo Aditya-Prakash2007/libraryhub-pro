@@ -48,10 +48,10 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
     profilePhoto?: string; status?: string; paymentStatus?: string;
     monthlyFee?: number; joiningDate?: string; expiryDate?: string;
     attendancePercentage?: number; totalPresent?: number; totalAbsent?: number;
-    currentStreak?: number; seat?: { seatNumber?: string }; shift?: { name?: string; startTime?: string; endTime?: string };
+    currentStreak?: number; seat?: { seatNumber?: string; floor?: number }; shift?: { name?: string; startTime?: string; endTime?: string };
     payments?: { id: string; paymentId: string; amount: number; status: string; paymentType: string; paidAt?: string }[];
     attendance?: { id: string; date: string; status: string; checkInTime?: string }[];
-    fatherName?: string; address?: string; city?: string; state?: string;
+    fatherName?: string; address?: string; city?: string; state?: string; depositAmount?: number;
   } | null;
 
   return (
@@ -116,7 +116,7 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                   {/* Quick stats */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { label: "Seat", value: s.seat?.seatNumber || "—", icon: Grid3X3 },
+                      { label: "Seat", value: s.seat?.seatNumber ? `${s.seat.seatNumber} (Floor ${s.seat.floor})` : "—", icon: Grid3X3 },
                       { label: "Shift", value: s.shift?.name || "—", icon: Clock },
                       { label: "Monthly Fee", value: formatCurrency(s.monthlyFee || 0), icon: CreditCard },
                       { label: "Streak", value: `${s.currentStreak || 0} days`, icon: Zap },
@@ -150,6 +150,7 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                       { label: "Father's Name", value: s.fatherName },
                       { label: "Joining Date", value: s.joiningDate ? formatDate(s.joiningDate) : "—" },
                       { label: "Expiry Date", value: s.expiryDate ? formatDate(s.expiryDate) : "—" },
+                      { label: "Security Deposit", value: s.depositAmount ? formatCurrency(s.depositAmount) : "—" },
                       { label: "Address", value: s.city ? `${s.city}, ${s.state}` : s.address },
                     ].map((item) => item.value && (
                       <div key={item.label}>
