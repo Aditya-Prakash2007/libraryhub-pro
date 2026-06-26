@@ -169,7 +169,7 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
         {[
           { label: "Seat", value: s.seat?.seatNumber || "—", sub: s.seat ? `Floor ${s.seat.floor}` : "Unassigned", color: "text-indigo-500 bg-indigo-500/10", icon: Grid3X3 },
           { label: "Shift", value: s.shift?.name || "—", sub: s.shift ? `${s.shift.startTime}–${s.shift.endTime}` : "No shift", color: "text-violet-500 bg-violet-500/10", icon: Clock },
-          { label: "Monthly Fee", value: formatCurrency(s.monthlyFee), sub: `Deposit: ${formatCurrency(s.depositAmount)}`, color: "text-emerald-500 bg-emerald-500/10", icon: CreditCard },
+          { label: "Monthly Fee", value: formatCurrency(s.monthlyFee), sub: `Net: ${formatCurrency(s.monthlyFee - s.discountAmount)}`, color: "text-emerald-500 bg-emerald-500/10", icon: CreditCard },
           { label: "Attendance", value: `${s.attendancePercentage}%`, sub: `Streak: ${s.currentStreak} days`, color: "text-amber-500 bg-amber-500/10", icon: CalendarCheck },
         ].map((item, i) => (
           <motion.div key={item.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
@@ -226,7 +226,6 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
                   ["Joining Date", formatDate(s.joiningDate)],
                   ["Expiry Date", s.expiryDate ? formatDate(s.expiryDate) : "N/A"],
                   ["Monthly Fee", formatCurrency(s.monthlyFee)],
-                  ["Security Deposit", formatCurrency(s.depositAmount)],
                   ["Discount", formatCurrency(s.discountAmount)],
                   ["Net Monthly", formatCurrency(s.monthlyFee - s.discountAmount)],
                 ].map(([label, value]) => (

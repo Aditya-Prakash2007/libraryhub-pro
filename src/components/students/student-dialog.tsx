@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, forwardRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -28,52 +28,104 @@ import { cn } from "@/lib/utils";
 import { ShiftSelector } from "@/components/shifts/shift-selector";
 
 interface Shift { id: string; name: string; startTime: string; endTime: string; color: string; }
-interface Seat { id: string; seatNumber: string; floor: number; status: string; seatType: string; students?: { fullName: string; shift?: { name: string } }[]; }
-
-// ── STABLE FEE INPUT — defined OUTSIDE parent component so it NEVER re-mounts ──
-// This is the definitive fix: defining FeeInput inside StudentDialog caused re-mount on every parent state change
-interface StableFeeInputProps {
-  label: string;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  defaultValue?: number;
-  required?: boolean;
-  onInput?: () => void;
+interface Seat {
+  id: string;
+  seatNumber: string;
+  floor: number;
+  status: string;
+  seatType: string;
+  students?: {
+    id: string;
+    fullName: string;
+    shift?: {
+      name: string;
+      startTime?: string;
+      endTime?: string;
+    } | null;
+  }[];
 }
 
-function StableFeeInput({ label, inputRef, defaultValue, required, onInput }: StableFeeInputProps) {
-  return (
-    <div className="space-y-1.5">
-      <label className={`text-sm font-medium leading-none${required ? " after:content-['*'] after:text-destructive after:ml-0.5" : ""}`}>
-        {label}
-      </label>
-      <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none z-10">
-          ₹
-        </span>
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          defaultValue={defaultValue && defaultValue > 0 ? String(defaultValue) : ""}
-          placeholder="0"
-          autoComplete="off"
-          className="flex h-10 w-full rounded-lg border border-input bg-background pl-7 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 transition-colors"
-          onInput={onInput}
-          onKeyDown={(e) => {
-            // Allow: digits, backspace, delete, tab, enter, dot, arrow keys
-            const allowed = ["Backspace", "Delete", "Tab", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "."];
-            if (!allowed.includes(e.key) && !/^\d$/.test(e.key)) {
-              e.preventDefault();
-            }
-            // Prevent second dot
-            if (e.key === "." && (e.currentTarget.value.includes("."))) {
-              e.preventDefault();
-            }
-          }}
-        />
+interface StableFeeInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  required?: boolean;
+  error?: string;
+}
+
+const StableFeeInput = forwardRef<HTMLInputElement, StableFeeInputProps>(
+  ({ label, required, error, ...props }, ref) => {
+    return (
+      <div className="space-y-1.5">
+        <label className={`text-sm font-medium leading-none${required ? " after:content-['*'] after:text-destructive after:ml-0.5" : ""}`}>
+          {label}
+        </label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none z-10">
+            ₹
+          </span>
+          <input
+            ref={ref}
+            type="number"
+            step="any"
+            placeholder="0"
+            autoComplete="off"
+            className="flex h-10 w-full rounded-lg border border-input bg-background pl-7 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 transition-colors"
+            {...props}
+          />
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
-    </div>
-  );
+    );
+  }
+);
+StableFeeInput.displayName = "StableFeeInput";
+
+function isSeatOccupiedForShift(
+  seat: Seat,
+  selectedShift: Shift | undefined,
+  currentStudentId?: string | null
+): boolean {
+  if (seat.status === "MAINTENANCE") return true;
+  if (!selectedShift) return false;
+
+  const activeStudents = seat.students?.filter(st => {
+    if (currentStudentId && st.id === currentStudentId) return false;
+    return true;
+  }) || [];
+
+  if (activeStudents.length === 0) return false;
+
+  const toMin = (timeStr: string) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const isFull = (name: string) => {
+    const n = name.toLowerCase();
+    return n === "full day" || n === "full" || n === "fullday";
+  };
+
+  const selStart = toMin(selectedShift.startTime);
+  let selEnd = toMin(selectedShift.endTime);
+  if (selEnd <= selStart) selEnd += 24 * 60;
+  const selIsFull = isFull(selectedShift.name);
+
+  for (const student of activeStudents) {
+    const studentShift = student.shift;
+    if (!studentShift) continue;
+
+    if (selIsFull || isFull(studentShift.name)) {
+      return true;
+    }
+
+    const stStart = toMin(studentShift.startTime || "00:00");
+    let stEnd = toMin(studentShift.endTime || "00:00");
+    if (stEnd <= stStart) stEnd += 24 * 60;
+
+    if (selStart < stEnd && stStart < selEnd) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 interface StudentDialogProps {
@@ -91,26 +143,7 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seatsLoading, setSeatsLoading] = useState(false);
   const [floorFilter, setFloorFilter] = useState<number | "all">("all");
-  // Fee refs — NO STATE, so typing never causes re-render or focus loss
-  const monthlyFeeRef = useRef<HTMLInputElement>(null);
-  const depositRef = useRef<HTMLInputElement>(null);
-  const discountRef = useRef<HTMLInputElement>(null);
   const isEdit = !!student?.id;
-
-  // Update fee summary display without re-rendering (avoids focus loss)
-  const updateFeeSummary = useCallback(() => {
-    const fee = parseFloat(monthlyFeeRef.current?.value || "0") || 0;
-    const discount = parseFloat(discountRef.current?.value || "0") || 0;
-    const total = Math.max(0, fee - discount);
-    const fmtINR = (v: number) => v.toLocaleString("en-IN");
-
-    const elFee = document.getElementById("fee-monthly-display");
-    const elDiscount = document.getElementById("fee-discount-display");
-    const elTotal = document.getElementById("fee-total-display");
-    if (elFee) elFee.textContent = `₹${fmtINR(fee)}`;
-    if (elDiscount) elDiscount.textContent = `− ₹${fmtINR(discount)}`;
-    if (elTotal) elTotal.textContent = `₹${fmtINR(total)}`;
-  }, []);
 
   const {
     register,
@@ -126,6 +159,9 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
 
   const selectedShiftId = watch("shiftId");
   const selectedSeatId = watch("seatId");
+  const monthlyFeeValue = watch("monthlyFee") ?? 0;
+  const discountAmountValue = watch("discountAmount") ?? 0;
+  const totalPayableValue = Math.max(0, monthlyFeeValue - discountAmountValue);
 
   useEffect(() => {
     if (!open) return;
@@ -152,15 +188,8 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
         discountAmount: student.discountAmount ?? 0,
         notes: student.notes ?? "",
       });
-      // Sync fee ref values
-      if (monthlyFeeRef.current) monthlyFeeRef.current.value = student.monthlyFee ? String(student.monthlyFee) : "";
-      if (depositRef.current) depositRef.current.value = student.depositAmount ? String(student.depositAmount) : "";
-      if (discountRef.current) discountRef.current.value = student.discountAmount ? String(student.discountAmount) : "";
     } else {
       reset({ monthlyFee: 0, depositAmount: 0, discountAmount: 0 });
-      if (monthlyFeeRef.current) monthlyFeeRef.current.value = "";
-      if (depositRef.current) depositRef.current.value = "";
-      if (discountRef.current) discountRef.current.value = "";
     }
   }, [open, student, reset]);
 
@@ -187,13 +216,7 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
   }, [open, loadShifts, loadSeats]);
 
   const onSubmit = async (data: StudentFormData) => {
-    // Read fee values directly from DOM refs — no state involved
-    const fee = parseFloat(monthlyFeeRef.current?.value || "0") || 0;
-    const deposit = parseFloat(depositRef.current?.value || "0") || 0;
-    const discount = parseFloat(discountRef.current?.value || "0") || 0;
-    data.monthlyFee = fee;
-    data.depositAmount = deposit;
-    data.discountAmount = discount;
+    data.depositAmount = 0; // Removed security deposit
 
     // Validate mandatory fields
     if (!data.shiftId) {
@@ -204,7 +227,7 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
       toast.error("Please select a seat (Seat & Shift tab)");
       return;
     }
-    if (fee <= 0) {
+    if (!data.monthlyFee || data.monthlyFee <= 0) {
       toast.error("Monthly fee must be greater than 0 (Fees tab)");
       return;
     }
@@ -393,19 +416,18 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
                               <div className="flex flex-wrap gap-1.5">
                                 {fs.map((seat) => {
                                   const isSelected = selectedSeatId === seat.id;
-                                  
-                                  const bookedShiftsNames = Array.from(new Set(seat.students?.map(s => s.shift?.name).filter(Boolean)));
                                   const selectedShift = shifts.find(s => s.id === selectedShiftId);
-                                  const isFullDaySelected = selectedShift?.name === "Full Day";
-                                  const isReservedForOtherShifts = isFullDaySelected && bookedShiftsNames.length > 0;
                                   
-                                  let effectiveStatus = seat.status;
-                                  if (isReservedForOtherShifts && seat.status !== "MAINTENANCE") {
-                                    effectiveStatus = "RESERVED";
-                                  }
+                                  // Check if occupied for this shift using our shift overlap helper (excluding the current student if editing)
+                                  const isOccupied = isSeatOccupiedForShift(seat, selectedShift, student?.id);
                                   
-                                  const isDisabled = effectiveStatus === "OCCUPIED" || effectiveStatus === "RESERVED" || effectiveStatus === "MAINTENANCE";
-                                  const c = SEAT_STATUS_COLORS[effectiveStatus as keyof typeof SEAT_STATUS_COLORS] ?? SEAT_STATUS_COLORS.MAINTENANCE;
+                                  const effectiveStatus = seat.status === "MAINTENANCE" ? "MAINTENANCE" : (isOccupied ? "OCCUPIED" : "AVAILABLE");
+                                  const isDisabled = effectiveStatus === "OCCUPIED" || effectiveStatus === "MAINTENANCE";
+                                  const c = SEAT_STATUS_COLORS[effectiveStatus as keyof typeof SEAT_STATUS_COLORS] ?? SEAT_STATUS_COLORS.AVAILABLE;
+
+                                  const otherBookedShifts = Array.from(new Set(
+                                    seat.students?.filter(st => !student?.id || st.id !== student.id).map(st => st.shift?.name).filter(Boolean)
+                                  ));
                                   
                                   return (
                                     <Tooltip key={seat.id}>
@@ -430,8 +452,12 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
                                         <p className="font-semibold">Seat {seat.seatNumber}</p>
                                         <p className="text-muted-foreground">Floor {seat.floor}</p>
                                         <p className={c.text}>{effectiveStatus}</p>
-                                        {isReservedForOtherShifts && <p className="text-amber-400">Reserved for: {bookedShiftsNames.join(", ")}</p>}
-                                        {seat.students?.map((st, i) => <p key={i}>👤 {st.fullName} {st.shift?.name ? `(${st.shift.name})` : ""}</p>)}
+                                        {otherBookedShifts.length > 0 && (
+                                          <p className="text-amber-400">Reserved in: {otherBookedShifts.join(", ")}</p>
+                                        )}
+                                        {seat.students?.filter(st => !student?.id || st.id !== student.id).map((st, i) => (
+                                          <p key={i}>👤 {st.fullName} {st.shift?.name ? `(${st.shift.name})` : ""}</p>
+                                        ))}
                                       </TooltipContent>
                                     </Tooltip>
                                   );
@@ -486,22 +512,14 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <StableFeeInput
                     label="Monthly Fee (₹)"
-                    inputRef={monthlyFeeRef}
-                    defaultValue={student?.monthlyFee}
                     required
-                    onInput={updateFeeSummary}
-                  />
-                  <StableFeeInput
-                    label="Security Deposit (₹)"
-                    inputRef={depositRef}
-                    defaultValue={student?.depositAmount}
-                    onInput={updateFeeSummary}
+                    {...register("monthlyFee", { valueAsNumber: true })}
+                    error={errors.monthlyFee?.message}
                   />
                   <StableFeeInput
                     label="Discount (₹)"
-                    inputRef={discountRef}
-                    defaultValue={student?.discountAmount}
-                    onInput={updateFeeSummary}
+                    {...register("discountAmount", { valueAsNumber: true })}
+                    error={errors.discountAmount?.message}
                   />
                 </div>
 
@@ -510,20 +528,18 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
                   <div className="space-y-1 text-sm" id="fee-summary-box">
                     <div className="flex justify-between text-muted-foreground">
                       <span>Monthly Fee</span>
-                      <span id="fee-monthly-display">₹{student?.monthlyFee ? student.monthlyFee.toLocaleString("en-IN") : "0"}</span>
+                      <span>₹{monthlyFeeValue ? monthlyFeeValue.toLocaleString("en-IN") : "0"}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>Discount</span>
-                      <span id="fee-discount-display" className="text-emerald-500">
-                        − ₹{student?.discountAmount ? student.discountAmount.toLocaleString("en-IN") : "0"}
+                      <span className="text-emerald-500">
+                        − ₹{discountAmountValue ? discountAmountValue.toLocaleString("en-IN") : "0"}
                       </span>
                     </div>
                     <div className="flex justify-between font-semibold border-t border-border/50 pt-1 mt-1">
                       <span>Total Payable / Month</span>
-                      <span id="fee-total-display" className="text-indigo-400">
-                        ₹{student?.monthlyFee
-                          ? Math.max(0, (student.monthlyFee) - (student.discountAmount ?? 0)).toLocaleString("en-IN")
-                          : "0"}
+                      <span className="text-indigo-400">
+                        ₹{totalPayableValue ? totalPayableValue.toLocaleString("en-IN") : "0"}
                       </span>
                     </div>
                   </div>

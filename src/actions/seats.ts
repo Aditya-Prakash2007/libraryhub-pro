@@ -28,7 +28,7 @@ export async function getSeats(shiftId?: string) {
             fullName: true,
             studentId: true,
             profilePhoto: true,
-            shift: { select: { id: true, name: true, color: true } },
+            shift: { select: { id: true, name: true, color: true, startTime: true, endTime: true } },
           },
           where: { status: "ACTIVE" },
           take: 3,
@@ -165,10 +165,19 @@ export async function assignSeat(seatId: string, studentId: string) {
 
     // Vacate old seat
     if (student.seatId) {
-      await prisma.seat.update({
-        where: { id: student.seatId },
-        data: { status: "AVAILABLE" },
+      const otherActive = await prisma.student.count({
+        where: {
+          seatId: student.seatId,
+          status: "ACTIVE",
+          id: { not: student.id },
+        },
       });
+      if (otherActive === 0) {
+        await prisma.seat.update({
+          where: { id: student.seatId },
+          data: { status: "AVAILABLE" },
+        });
+      }
     }
 
     await prisma.$transaction([

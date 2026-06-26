@@ -236,15 +236,17 @@ export function StudentsPage() {
         </div>
       ),
     },
-    {
-      key: "fee",
-      header: "Monthly Fee",
-      cell: (row) => (
-        <span className="text-sm font-medium">{formatCurrency(row.monthlyFee)}</span>
-      ),
-    },
+    { key: "fee", header: "Monthly Fee", cell: (row) => (<span className="text-sm font-medium">{formatCurrency(row.monthlyFee)}</span>), },
+    { key: "total", header: "Total Payable", cell: (row) => (<span className="text-sm font-medium">{formatCurrency(row.monthlyFee - (row.discountAmount ?? 0))}</span>), },
     { key: "status", header: "Status", cell: (row) => statusBadge(row.status) },
-    { key: "payment", header: "Payment", cell: (row) => paymentBadge(row.paymentStatus) },
+    { key: "payment", header: "Payment", cell: (row) => (
+        <div className="flex flex-col items-start">
+          {paymentBadge(row.paymentStatus)}
+          {(row.paymentStatus === "PENDING" || row.paymentStatus === "OVERDUE") && (
+            <span className="text-xs text-muted-foreground mt-1">Due: {formatCurrency(row.monthlyFee - (row.discountAmount ?? 0))}</span>
+          )}
+        </div>
+      ) },
     {
       key: "attendance",
       header: "Attendance",

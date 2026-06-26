@@ -150,7 +150,6 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                       { label: "Father's Name", value: s.fatherName },
                       { label: "Joining Date", value: s.joiningDate ? formatDate(s.joiningDate) : "—" },
                       { label: "Expiry Date", value: s.expiryDate ? formatDate(s.expiryDate) : "—" },
-                      { label: "Security Deposit", value: s.depositAmount ? formatCurrency(s.depositAmount) : "—" },
                       { label: "Address", value: s.city ? `${s.city}, ${s.state}` : s.address },
                     ].map((item) => item.value && (
                       <div key={item.label}>

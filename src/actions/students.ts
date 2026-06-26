@@ -14,6 +14,63 @@ async function getAdminLibraryId(): Promise<string | null> {
   return session?.user?.libraryId ?? null;
 }
 
+async function checkSeatAvailability(
+  seatId: string,
+  shiftId: string,
+  libraryId: string,
+  excludeStudentId?: string
+): Promise<{ error?: string; seat?: any }> {
+  const seat = await prisma.seat.findFirst({
+    where: { id: seatId, libraryId },
+    include: {
+      students: {
+        where: {
+          status: "ACTIVE",
+          ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}),
+        },
+        include: { shift: true },
+      },
+    },
+  });
+
+  if (!seat) return { error: "Selected seat not found" };
+  if (seat.status === "MAINTENANCE") return { error: "Selected seat is under maintenance" };
+
+  const selectedShift = await prisma.shift.findFirst({
+    where: { id: shiftId, libraryId },
+  });
+  if (!selectedShift) return { error: "Selected shift not found" };
+
+  const toMin = (timeStr: string) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const isFull = (name: string) => {
+    const n = name.toLowerCase();
+    return n === "full day" || n === "full" || n === "fullday";
+  };
+
+  const selStart = toMin(selectedShift.startTime);
+  let selEnd = toMin(selectedShift.endTime);
+  if (selEnd <= selStart) selEnd += 24 * 60;
+  const selIsFull = isFull(selectedShift.name);
+
+  for (const st of seat.students) {
+    if (!st.shift) continue;
+    if (selIsFull || isFull(st.shift.name)) {
+      return { error: `Selected seat is already occupied by ${st.fullName} in "${st.shift.name}" shift` };
+    }
+    const stStart = toMin(st.shift.startTime);
+    let stEnd = toMin(st.shift.endTime);
+    if (stEnd <= stStart) stEnd += 24 * 60;
+    if (selStart < stEnd && stStart < selEnd) {
+      return { error: `Selected seat is already occupied by ${st.fullName} in "${st.shift.name}" shift` };
+    }
+  }
+
+  return { seat };
+}
+
 // Get all students for the library
 export async function getStudents(params?: {
   search?: string;
@@ -138,11 +195,9 @@ export async function createStudent(data: StudentFormData) {
     const studentId = generateStudentId(library.slug, count + 1);
 
     // Check if seat is available
-    if (data.seatId) {
-      const seat = await prisma.seat.findFirst({
-        where: { id: data.seatId, libraryId, status: "AVAILABLE" },
-      });
-      if (!seat) return { error: "Selected seat is not available" };
+    if (data.seatId && data.shiftId) {
+      const avail = await checkSeatAvailability(data.seatId, data.shiftId, libraryId);
+      if (avail.error) return { error: avail.error };
     }
 
     // Default password = phone number (student can change via forgot password)
@@ -254,16 +309,78 @@ export async function updateStudent(id: string, data: Partial<StudentFormData>) 
     const existing = await prisma.student.findFirst({ where: { id, libraryId } });
     if (!existing) return { error: "Student not found" };
 
-    if (data.seatId && data.seatId !== existing.seatId) {
-      const newSeat = await prisma.seat.findFirst({
-        where: { id: data.seatId, libraryId, status: "AVAILABLE" },
-      });
-      if (!newSeat) return { error: "Selected seat is not available" };
+    const targetSeatId = data.seatId !== undefined ? data.seatId : existing.seatId;
+    const targetShiftId = data.shiftId !== undefined ? data.shiftId : existing.shiftId;
+
+    if (targetSeatId && targetShiftId) {
+      if (targetSeatId !== existing.seatId || targetShiftId !== existing.shiftId) {
+        const avail = await checkSeatAvailability(targetSeatId, targetShiftId, libraryId, id);
+        if (avail.error) return { error: avail.error };
+      }
     }
+
+    // Build explicit update payload — no blind ...data spread
+    const updateData: Record<string, unknown> = {};
+
+    // String fields — set to value or null
+    const strFields = [
+      "fullName", "fatherName", "motherName", "email", "phone",
+      "whatsappNumber", "emergencyContact", "address", "city",
+      "state", "pincode", "gender", "occupation", "institution", "notes",
+    ] as const;
+    for (const key of strFields) {
+      if (data[key] !== undefined) {
+        updateData[key] = data[key] || null;
+      }
+    }
+    // fullName, email, phone should never be null
+    if (data.fullName) updateData.fullName = data.fullName;
+    if (data.email) updateData.email = data.email;
+    if (data.phone) updateData.phone = data.phone;
+
+    // ID reference fields
+    if (data.seatId !== undefined) updateData.seatId = data.seatId || null;
+    if (data.shiftId !== undefined) updateData.shiftId = data.shiftId || null;
+
+    // Numeric fields — ensure valid numbers, fallback to existing
+    if (data.monthlyFee !== undefined) {
+      const fee = Number(data.monthlyFee);
+      updateData.monthlyFee = isNaN(fee) ? existing.monthlyFee : fee;
+    }
+    if (data.depositAmount !== undefined) {
+      const dep = Number(data.depositAmount);
+      updateData.depositAmount = isNaN(dep) ? 0 : dep;
+    }
+    if (data.discountAmount !== undefined) {
+      const disc = Number(data.discountAmount);
+      updateData.discountAmount = isNaN(disc) ? 0 : disc;
+    }
+
+    // Date fields — convert strings to Date
+    if (data.joiningDate) {
+      updateData.joiningDate = new Date(data.joiningDate);
+    }
+    if (data.expiryDate !== undefined) {
+      updateData.expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+    }
+    if (data.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
+    }
+
+    console.log("[updateStudent] id:", id, "payload:", JSON.stringify(updateData));
 
     const student = await prisma.$transaction(async (tx) => {
       if (data.seatId !== undefined && existing.seatId && data.seatId !== existing.seatId) {
-        await tx.seat.update({ where: { id: existing.seatId }, data: { status: "AVAILABLE" } });
+        const otherActive = await tx.student.count({
+          where: {
+            seatId: existing.seatId,
+            status: "ACTIVE",
+            id: { not: id },
+          },
+        });
+        if (otherActive === 0) {
+          await tx.seat.update({ where: { id: existing.seatId }, data: { status: "AVAILABLE" } });
+        }
       }
       if (data.seatId && data.seatId !== existing.seatId) {
         await tx.seat.update({ where: { id: data.seatId }, data: { status: "OCCUPIED" } });
@@ -282,17 +399,13 @@ export async function updateStudent(id: string, data: Partial<StudentFormData>) 
 
       return tx.student.update({
         where: { id },
-        data: {
-          ...data,
-          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-          joiningDate: data.joiningDate ? new Date(data.joiningDate) : undefined,
-          expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
-        },
+        data: updateData as any,
       });
     });
 
     revalidatePath("/admin/students");
     revalidatePath(`/admin/students/${id}`);
+    revalidatePath("/admin/dashboard");
     return { success: true, student };
   } catch (error) {
     console.error("Update student error:", error);
@@ -311,7 +424,16 @@ export async function deleteStudent(id: string) {
 
     await prisma.$transaction(async (tx) => {
       if (student.seatId) {
-        await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
+        const otherActive = await tx.student.count({
+          where: {
+            seatId: student.seatId,
+            status: "ACTIVE",
+            id: { not: id },
+          },
+        });
+        if (otherActive === 0) {
+          await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
+        }
       }
       await tx.student.delete({ where: { id } });
     });
