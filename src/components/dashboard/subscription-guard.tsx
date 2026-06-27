@@ -107,6 +107,11 @@ function TrialBanner({ trialEndsAt }: { trialEndsAt: Date }) {
 
 function BlockedScreen({ reason }: { reason: string }) {
   const messages: Record<string, { icon: React.ReactNode; title: string; desc: string; cta?: string }> = {
+    LIBRARY_NOT_FOUND: {
+      icon: <AlertTriangle className="w-12 h-12 text-amber-500" />,
+      title: "Session Expired",
+      desc: "Your session is linked to a library that no longer exists. Please sign out and log in again to continue.",
+    },
     TRIAL_EXPIRED: {
       icon: <Clock className="w-12 h-12 text-amber-500" />,
       title: "Trial Expired",
