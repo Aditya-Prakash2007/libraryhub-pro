@@ -7,11 +7,14 @@ import type { LibrarySettingsFormData } from "@/schemas";
 
 export async function saveLibrarySettings(data: LibrarySettingsFormData) {
   const session = await auth();
-  if (!session?.user?.libraryId) return { error: "Unauthorized" };
+  const libraryId = session?.user?.libraryId;
+  const userId = session?.user?.id;
+
+  if (!libraryId || !userId) return { error: "Unauthorized" };
 
   await prisma.$transaction(async (tx) => {
     const updatedLibrary = await tx.library.update({
-      where: { id: session.user.libraryId },
+      where: { id: libraryId },
       data: {
         name: data.name,
         description: data.description || null,
@@ -36,7 +39,7 @@ export async function saveLibrarySettings(data: LibrarySettingsFormData) {
     if (data.email || data.phone || data.name) {
       await tx.user.updateMany({
         where: {
-          id: session.user.id,
+          id: userId,
         },
         data: {
           ...(data.email && { email: data.email }),
