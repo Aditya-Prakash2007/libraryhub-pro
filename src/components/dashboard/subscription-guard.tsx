@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Lock, Clock, CreditCard, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,13 +18,28 @@ type AccessState =
   | { status: "blocked"; reason: string };
 
 export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [accessState, setAccessState] = useState<AccessState>({ status: "loading" });
 
   useEffect(() => {
-    if (!session?.user?.libraryId) return;
+    // Wait until NextAuth session is fully resolved
+    if (status === "loading") return;
+
+    // Not logged in — layout/middleware handles redirect
+    if (!session?.user) {
+      setAccessState({ status: "allowed", reason: "NO_SESSION" });
+      return;
+    }
+
+    // Non-library-admin roles (SUPER_ADMIN etc.) are always allowed
     if (session.user.role !== "LIBRARY_ADMIN") {
       setAccessState({ status: "allowed", reason: "SUPER_ADMIN" });
+      return;
+    }
+
+    // Library admin but libraryId missing — allow, server-side will handle it
+    if (!session.user.libraryId) {
+      setAccessState({ status: "allowed", reason: "NO_LIBRARY_ID" });
       return;
     }
 
@@ -40,7 +54,7 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
         setAccessState({ status: "blocked", reason: result.reason });
       }
     });
-  }, [session]);
+  }, [session, status]);
 
   if (accessState.status === "loading") return null;
 
