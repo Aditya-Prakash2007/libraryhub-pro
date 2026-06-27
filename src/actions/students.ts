@@ -190,9 +190,21 @@ export async function createStudent(data: StudentFormData) {
       }
     }
 
-    // Generate student ID
+    // Generate student ID with collision handling
     const count = await prisma.student.count({ where: { libraryId } });
-    const studentId = generateStudentId(library.slug, count + 1);
+    let studentId = "";
+    let isUnique = false;
+    let currentCount = count;
+    
+    while (!isUnique) {
+      studentId = generateStudentId(library.slug, currentCount + 1);
+      const existingId = await prisma.student.findUnique({ where: { studentId } });
+      if (!existingId) {
+        isUnique = true;
+      } else {
+        currentCount++;
+      }
+    }
 
     // Check if seat is available
     if (data.seatId && data.shiftId) {

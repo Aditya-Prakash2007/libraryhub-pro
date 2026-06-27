@@ -99,9 +99,9 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
           <TabsTrigger value="security"><Shield className="w-4 h-4 mr-1.5" />Security</TabsTrigger>
         </TabsList>
 
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <div className="space-y-6">
           {/* ── General ── */}
-          <TabsContent value="general">
+          <TabsContent value="general" className="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>Library Information</CardTitle>
@@ -161,15 +161,15 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
                     <Input {...register("pincode")} placeholder="400001" />
                   </div>
                 </div>
-                <Button type="submit" loading={saving}>
-                  <Save className="w-4 h-4" />Save Settings
+                <Button type="button" loading={saving} onClick={handleSubmit(onSubmit)}>
+                  <Save className="w-4 h-4 mr-2" />Save Settings
                 </Button>
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ── Payments / Razorpay & Custom QR ── */}
-          <TabsContent value="payments">
+          <TabsContent value="payments" className="mt-0">
             <div className="space-y-6">
               <RazorpaySettings
                 razorpayKeyId={library?.razorpayKeyId}
@@ -212,7 +212,7 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
                   </div>
 
                   <Button type="button" loading={saving} onClick={handleSubmit(onSubmit)}>
-                    <Save className="w-4 h-4" />
+                    <Save className="w-4 h-4 mr-2" />
                     Save UPI Settings
                   </Button>
                 </CardContent>
@@ -221,7 +221,7 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
           </TabsContent>
 
           {/* ── Notifications ── */}
-          <TabsContent value="notifications">
+          <TabsContent value="notifications" className="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>Notification Preferences</CardTitle>
@@ -244,14 +244,14 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
                   </div>
                 ))}
                 <Button type="button" loading={saving} onClick={handleSubmit(onSubmit)}>
-                  <Save className="w-4 h-4" />Save Notification Settings
+                  <Save className="w-4 h-4 mr-2" />Save Notification Settings
                 </Button>
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ── Branding ── */}
-          <TabsContent value="branding">
+          <TabsContent value="branding" className="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>Library Branding</CardTitle>
@@ -282,15 +282,15 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
                     <div className="flex-1 h-8 rounded-md" style={{ background: watch("secondaryColor") || "#8b5cf6" }} />
                   </div>
                 </div>
-                <Button type="submit" loading={saving}>
-                  <Save className="w-4 h-4" />Save Branding
+                <Button type="button" loading={saving} onClick={handleSubmit(onSubmit)}>
+                  <Save className="w-4 h-4 mr-2" />Save Branding
                 </Button>
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ── Security ── */}
-          <TabsContent value="security">
+          <TabsContent value="security" className="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>Security Settings</CardTitle>
@@ -319,7 +319,7 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
               </CardContent>
             </Card>
           </TabsContent>
-        </form>
+        </div>
       </Tabs>
     </div>
   );

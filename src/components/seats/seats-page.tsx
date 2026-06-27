@@ -245,7 +245,9 @@ export function SeatsPage() {
             {floors
               .filter((f) => floorFilter === "all" || String(f) === floorFilter)
               .map((floor) => {
-                const floorSeats = filteredSeats.filter((s) => s.floor === floor);
+                const floorSeats = filteredSeats
+                  .filter((s) => s.floor === floor)
+                  .sort((a, b) => a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true, sensitivity: 'base' }));
                 // Split floor seats into rows of SEATS_PER_ROW
                 const rows: Seat[][] = [];
                 for (let i = 0; i < floorSeats.length; i += SEATS_PER_ROW) {

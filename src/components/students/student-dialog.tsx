@@ -404,7 +404,9 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
                     ) : (
                       <TooltipProvider delayDuration={50}>
                         {floors.filter((f) => floorFilter === "all" || f === floorFilter).map((floor) => {
-                          const fs = visibleSeats.filter((s) => s.floor === floor);
+                          const fs = visibleSeats
+                            .filter((s) => s.floor === floor)
+                            .sort((a, b) => a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true, sensitivity: 'base' }));
                           return (
                             <div key={floor}>
                               {floors.length > 0 && (

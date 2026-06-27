@@ -9,27 +9,46 @@ export async function saveLibrarySettings(data: LibrarySettingsFormData) {
   const session = await auth();
   if (!session?.user?.libraryId) return { error: "Unauthorized" };
 
-  await prisma.library.update({
-    where: { id: session.user.libraryId },
-    data: {
-      name: data.name,
-      description: data.description || null,
-      address: data.address || null,
-      city: data.city || null,
-      state: data.state || null,
-      pincode: data.pincode || null,
-      phone: data.phone || null,
-      email: data.email || null,
-      website: data.website || null,
-      openingTime: data.openingTime,
-      closingTime: data.closingTime,
-      primaryColor: data.primaryColor,
-      secondaryColor: data.secondaryColor,
-      currency: data.currency,
-      timezone: data.timezone,
-      upiId: data.upiId || null,
-      customQrCode: data.customQrCode || null,
-    },
+  await prisma.$transaction(async (tx) => {
+    const updatedLibrary = await tx.library.update({
+      where: { id: session.user.libraryId },
+      data: {
+        name: data.name,
+        description: data.description || null,
+        address: data.address || null,
+        city: data.city || null,
+        state: data.state || null,
+        pincode: data.pincode || null,
+        phone: data.phone || null,
+        email: data.email || null,
+        website: data.website || null,
+        openingTime: data.openingTime,
+        closingTime: data.closingTime,
+        primaryColor: data.primaryColor,
+        secondaryColor: data.secondaryColor,
+        currency: data.currency,
+        timezone: data.timezone,
+        upiId: data.upiId || null,
+        customQrCode: data.customQrCode || null,
+      },
+    });
+
+    if (data.email || data.phone || data.name) {
+      await tx.user.updateMany({
+        where: {
+          id: session.user.id,
+        },
+        data: {
+          ...(data.email && { email: data.email }),
+          ...(data.phone && { phone: data.phone }),
+          // We optionally update the user's name if they want it to match the library name,
+          // but since `data.name` is the Library Name, let's keep the user's name as is unless we explicitly want to change it.
+          // The user requested: "apna phone number ya email ya koi details change krta h to vo har jagah se update ho jaana chahiye".
+          // We will update the user's name to the library name.
+          ...(data.name && { name: data.name }),
+        },
+      });
+    }
   });
 
   revalidatePath("/admin/settings");
