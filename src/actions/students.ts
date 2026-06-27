@@ -398,13 +398,14 @@ export async function updateStudent(id: string, data: Partial<StudentFormData>) 
         await tx.seat.update({ where: { id: data.seatId }, data: { status: "OCCUPIED" } });
       }
 
-      // Also update user name/phone if changed
-      if ((data.fullName || data.phone) && existing.userId) {
+      // Also update user name/phone/email if changed
+      if ((data.fullName || data.phone || data.email) && existing.userId) {
         await tx.user.update({
           where: { id: existing.userId },
           data: {
             ...(data.fullName && { name: data.fullName }),
             ...(data.phone && { phone: data.phone }),
+            ...(data.email && { email: data.email }),
           },
         });
       }

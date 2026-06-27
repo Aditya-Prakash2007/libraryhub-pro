@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import bcrypt from "bcryptjs";
 import type { LibrarySettingsFormData } from "@/schemas";
 
 export async function saveLibrarySettings(data: LibrarySettingsFormData) {
@@ -113,4 +114,49 @@ export async function getLibraryWithSettings() {
     where: { id: session.user.libraryId },
     include: { settings: true },
   });
+}
+
+export async function deleteLibraryAccount(password: string) {
+  const session = await auth();
+  if (!session?.user?.id || !session?.user?.libraryId) return { error: "Unauthorized" };
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+  });
+
+  if (!user || !user.password) return { error: "Unauthorized" };
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) return { error: "Invalid password" };
+
+  const libraryId = session.user.libraryId;
+
+  // Get all student user IDs to delete their user accounts too
+  const students = await prisma.student.findMany({
+    where: { libraryId },
+    select: { userId: true },
+  });
+  const studentUserIds = students.map((s) => s.userId).filter(Boolean) as string[];
+  const allUserIds = [session.user.id, ...studentUserIds];
+
+  // Delete in correct dependency order (sequential to avoid relation violations)
+  await prisma.settings.deleteMany({ where: { libraryId } });
+  await prisma.subscription.deleteMany({ where: { libraryId } });
+  await prisma.waitlist.deleteMany({ where: { libraryId } });
+  await prisma.notification.deleteMany({ where: { libraryId } });
+  await prisma.document.deleteMany({ where: { libraryId } });
+  await prisma.attendance.deleteMany({ where: { libraryId } });
+  await prisma.invoice.deleteMany({ where: { libraryId } });
+  await prisma.payment.deleteMany({ where: { libraryId } });
+  await prisma.seat.deleteMany({ where: { libraryId } });
+  await prisma.shift.deleteMany({ where: { libraryId } });
+  await prisma.student.deleteMany({ where: { libraryId } });
+  await prisma.library.deleteMany({ where: { id: libraryId } });
+  // Delete ALL activity/audit logs for these users (by userId, not just libraryId)
+  await prisma.activityLog.deleteMany({ where: { userId: { in: allUserIds } } });
+  await prisma.auditLog.deleteMany({ where: { userId: { in: allUserIds } } });
+  // Now safe to delete the user accounts
+  await prisma.user.deleteMany({ where: { id: { in: allUserIds } } });
+
+  return { success: true };
 }

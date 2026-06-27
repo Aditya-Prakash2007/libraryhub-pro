@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { Building2, Bell, Shield, Palette, Save, Info, CreditCard, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { librarySettingsSchema } from "@/schemas";
 import type { LibrarySettingsFormData } from "@/schemas";
 import { saveLibrarySettings } from "@/actions/library";
 import { RazorpaySettings } from "./razorpay-settings";
+import { DeleteAccountDialog } from "./delete-account-dialog";
 
 interface LibrarySettings {
   emailNotifications: boolean;
@@ -78,11 +80,17 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
     },
   });
 
+  const { update } = useSession();
+
   const onSubmit = async (data: LibrarySettingsFormData) => {
     setSaving(true);
     const result = await saveLibrarySettings(data);
-    if ("error" in result) toast.error(result.error);
-    else toast.success("Settings saved successfully");
+    if ("error" in result) {
+      toast.error(result.error);
+    } else {
+      toast.success("Settings saved successfully");
+      await update({ name: data.name, email: data.email }); // Update session token on client side
+    }
     setSaving(false);
   };
 
@@ -316,6 +324,15 @@ export function LibrarySettingsPage({ library }: { library: Library | null }) {
                     <Switch defaultChecked={item.enabled} />
                   </div>
                 ))}
+
+                {/* ── Danger Zone ── */}
+                <div className="mt-6 p-4 rounded-xl border border-destructive/40 bg-destructive/5 space-y-3">
+                  <p className="text-sm font-semibold text-destructive">Danger Zone</p>
+                  <p className="text-xs text-muted-foreground">
+                    Permanently delete your library account and all associated data — students, seats, payments, attendance, and more. <strong>This action cannot be undone.</strong>
+                  </p>
+                  <DeleteAccountDialog />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
