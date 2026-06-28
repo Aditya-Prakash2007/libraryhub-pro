@@ -12,16 +12,20 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/shared/page-header";
 import { getSeats, vacateSeat, updateSeat, deleteSeat } from "@/actions/seats";
+import { getShifts } from "@/actions/shifts";
 import { SEAT_STATUS_COLORS } from "@/constants";
 import { cn } from "@/lib/utils";
 import { SeatDialog } from "./seat-dialog";
 import { BulkSeatDialog } from "./bulk-seat-dialog";
 import { BulkDeleteSeatDialog } from "./bulk-delete-seat-dialog";
+import { StudentDetailDialog } from "@/components/students/student-detail-dialog";
 
 interface StudentShift {
   id: string;
   name: string;
   color: string;
+  startTime: string;
+  endTime: string;
 }
 
 interface Seat {
@@ -53,28 +57,53 @@ function sortSeatsNumerically(seats: Seat[]): Seat[] {
 
 const STATUS_LEGEND = [
   { status: "AVAILABLE", label: "Available" },
-  { status: "OCCUPIED", label: "Occupied" },
+  { status: "OCCUPIED", label: "Full Occupied" },
+  { status: "PARTIAL_OCCUPIED", label: "Partial Occupied" },
+  { status: "MAINTENANCE", label: "Maintenance" },
 ];
 
 const SEATS_PER_ROW = 10;
 
+const PARTIAL_OCCUPIED_COLORS = {
+  bg: "bg-indigo-500/20",
+  border: "border-indigo-500",
+  text: "text-indigo-400",
+  dot: "bg-indigo-500",
+  hex: "#6366f1",
+};
+
+const getSeatColor = (status: string) => {
+  if (status === "PARTIAL_OCCUPIED") {
+    return PARTIAL_OCCUPIED_COLORS;
+  }
+  return SEAT_STATUS_COLORS[status as keyof typeof SEAT_STATUS_COLORS] || SEAT_STATUS_COLORS.AVAILABLE;
+};
+
 export function SeatsPage() {
   const [seats, setSeats] = useState<Seat[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [floorFilter, setFloorFilter] = useState("all");
-  const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
+  const [selectedSeat, setSelectedSeat] = useState<any | null>(null);
   const [seatInfoOpen, setSeatInfoOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
+  // Student detail modal state
+  const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
+  const [studentDetailOpen, setStudentDetailOpen] = useState(false);
+
   const loadSeats = useCallback(async () => {
     setLoading(true);
-    const result = await getSeats();
-    if ("error" in result) {
-      toast.error(result.error);
+    const [seatResult, shiftResult] = await Promise.all([getSeats(), getShifts()]);
+    if ("error" in seatResult) {
+      toast.error(seatResult.error);
     } else {
-      setSeats(sortSeatsNumerically(result.seats as Seat[]));
+      setSeats(sortSeatsNumerically(seatResult.seats as Seat[]));
+    }
+    if (shiftResult && !("error" in shiftResult)) {
+      setShifts(shiftResult.shifts || []);
     }
     setLoading(false);
   }, []);
@@ -95,7 +124,7 @@ export function SeatsPage() {
     maintenance: seats.filter((s) => s.status === "MAINTENANCE").length,
   };
 
-  const handleSeatClick = (seat: Seat) => {
+  const handleSeatClick = (seat: any) => {
     setSelectedSeat(seat);
     setSeatInfoOpen(true);
   };
@@ -117,28 +146,6 @@ export function SeatsPage() {
     const result = await deleteSeat(seatId);
     if ("error" in result) toast.error(result.error);
     else { toast.success("Seat deleted"); setSeatInfoOpen(false); loadSeats(); }
-  };
-
-  // Get which shifts are booked on a seat (via assigned students' shifts)
-  const getSeatBookedShifts = (seat: Seat): StudentShift[] => {
-    if (!seat.students || seat.students.length === 0) return [];
-    return seat.students
-      .filter((st) => st.shift)
-      .map((st) => st.shift!)
-      .filter((sh, idx, arr) => arr.findIndex((x) => x.id === sh.id) === idx);
-  };
-
-  // For "full-day" view: if seat is occupied/reserved in ANY shift, show RESERVED with label
-  const getEffectiveStatus = (seat: Seat): string => {
-    const bookedShifts = getSeatBookedShifts(seat);
-    if (bookedShifts.length > 0 && seat.status !== "OCCUPIED") return "RESERVED";
-    return seat.status;
-  };
-
-  const getShiftTooltipLabel = (seat: Seat): string => {
-    const bookedShifts = getSeatBookedShifts(seat);
-    if (bookedShifts.length === 0) return "";
-    return `Reserved for: ${bookedShifts.map((s) => s.name).join(", ")}`;
   };
 
   return (
@@ -206,7 +213,7 @@ export function SeatsPage() {
             {/* Legend */}
             <div className="flex items-center gap-3 flex-wrap">
               {STATUS_LEGEND.map((item) => {
-                const c = SEAT_STATUS_COLORS[item.status as keyof typeof SEAT_STATUS_COLORS];
+                const c = getSeatColor(item.status);
                 return (
                   <div key={item.status} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <div className={`w-3 h-3 rounded-sm ${c.dot}`} />
@@ -248,10 +255,64 @@ export function SeatsPage() {
                 const floorSeats = filteredSeats
                   .filter((s) => s.floor === floor)
                   .sort((a, b) => a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true, sensitivity: 'base' }));
-                // Split floor seats into rows of SEATS_PER_ROW
-                const rows: Seat[][] = [];
-                for (let i = 0; i < floorSeats.length; i += SEATS_PER_ROW) {
-                  rows.push(floorSeats.slice(i, i + SEATS_PER_ROW));
+
+                // Group physical seats by seatNumber
+                const seatGroupsMap = new Map<string, Seat[]>();
+                floorSeats.forEach((s) => {
+                  const existing = seatGroupsMap.get(s.seatNumber) || [];
+                  existing.push(s);
+                  seatGroupsMap.set(s.seatNumber, existing);
+                });
+
+                const uniqueFloorSeats = Array.from(seatGroupsMap.entries()).map(([seatNumber, seatRecords]) => {
+                  const assignedStudents = seatRecords.flatMap(s => s.students || []);
+                  
+                  const isFullDayShift = (name: string) => {
+                    const n = name.toLowerCase();
+                    return n === "full day" || n === "full" || n === "fullday";
+                  };
+
+                  const hasFullDayStudent = assignedStudents.some(st => st.shift && isFullDayShift(st.shift.name));
+
+                  const isRecordAvailable = (r: Seat) => {
+                    return r.status === "AVAILABLE" && (!r.students || r.students.length === 0);
+                  };
+
+                  const isAvailableInAnyShift = seatRecords.some(isRecordAvailable);
+                  const isOccupiedInAnyShift = seatRecords.some(r => r.status === "OCCUPIED" || (r.students && r.students.length > 0));
+
+                  let effectiveStatus = "AVAILABLE";
+                  if (hasFullDayStudent || !isAvailableInAnyShift) {
+                    effectiveStatus = "OCCUPIED"; // Full Occupied
+                  } else if (isOccupiedInAnyShift) {
+                    effectiveStatus = "PARTIAL_OCCUPIED"; // Partial Occupied
+                  } else if (seatRecords.some(r => r.status === "MAINTENANCE")) {
+                    effectiveStatus = "MAINTENANCE";
+                  } else if (seatRecords.some(r => r.status === "RESERVED")) {
+                    effectiveStatus = "RESERVED";
+                  }
+
+                  const occupiedShifts = seatRecords
+                    .filter(r => r.status === "OCCUPIED" || (r.students && r.students.length > 0))
+                    .map(r => r.shift?.name || "Any Shift")
+                    .filter((value, index, self) => self.indexOf(value) === index);
+
+                  const primarySeat = seatRecords.find(r => r.status === "OCCUPIED" || (r.students && r.students.length > 0)) || seatRecords[0];
+
+                  return {
+                    ...primarySeat,
+                    seatNumber,
+                    effectiveStatus,
+                    seatRecords,
+                    assignedStudents,
+                    occupiedShifts,
+                  };
+                });
+
+                // Split unique floor seats into rows of SEATS_PER_ROW
+                const rows: any[][] = [];
+                for (let i = 0; i < uniqueFloorSeats.length; i += SEATS_PER_ROW) {
+                  rows.push(uniqueFloorSeats.slice(i, i + SEATS_PER_ROW));
                 }
 
                 return (
@@ -260,7 +321,7 @@ export function SeatsPage() {
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Floor {floor}</span>
                         <div className="flex-1 h-px bg-border/50" />
-                        <span className="text-xs text-muted-foreground">{floorSeats.length} seats</span>
+                        <span className="text-xs text-muted-foreground">{uniqueFloorSeats.length} seats</span>
                       </div>
                     )}
                     <TooltipProvider delayDuration={100}>
@@ -273,12 +334,8 @@ export function SeatsPage() {
                             </span>
                             <div className="flex gap-2 flex-wrap">
                               {rowSeats.map((seat) => {
-                                const effectiveStatus = getEffectiveStatus(seat);
-                                const colors = SEAT_STATUS_COLORS[effectiveStatus as keyof typeof SEAT_STATUS_COLORS] || SEAT_STATUS_COLORS.AVAILABLE;
-                                const student = seat.students?.[0];
-                                const bookedShifts = getSeatBookedShifts(seat);
-                                const shiftLabel = getShiftTooltipLabel(seat);
-                                const isShiftReserved = bookedShifts.length > 0 && seat.status !== "OCCUPIED";
+                                const colors = getSeatColor(seat.effectiveStatus);
+                                const isPartial = seat.effectiveStatus === "PARTIAL_OCCUPIED";
 
                                 return (
                                   <Tooltip key={seat.id}>
@@ -291,26 +348,37 @@ export function SeatsPage() {
                                           "w-10 h-10 rounded-lg border text-xs font-bold transition-all duration-150 relative",
                                           colors.bg, colors.border, colors.text,
                                         )}
-                                        aria-label={`Seat ${seat.seatNumber} - ${effectiveStatus}`}
+                                        aria-label={`Seat ${seat.seatNumber} - ${seat.effectiveStatus}`}
                                       >
                                         {seat.seatNumber}
-                                        {isShiftReserved && (
-                                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-400 rounded-full border border-background" />
+                                        {isPartial && (
+                                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border border-background" />
                                         )}
                                       </motion.button>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                      <div className="text-xs space-y-0.5">
-                                        <p className="font-semibold">Seat {seat.seatNumber}</p>
-                                        <p className={colors.text}>{effectiveStatus}</p>
+                                      <div className="text-xs space-y-1 p-1 max-w-[200px]">
+                                        <p className="font-semibold text-sm">Seat {seat.seatNumber}</p>
+                                        <p className={cn("font-medium", colors.text)}>
+                                          {seat.effectiveStatus === "OCCUPIED" ? "Full Occupied" : seat.effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : seat.effectiveStatus}
+                                        </p>
                                         <p className="text-muted-foreground">Floor {seat.floor}</p>
-                                        {isShiftReserved && shiftLabel && (
-                                          <p className="text-amber-400">{shiftLabel}</p>
+                                        {isPartial && seat.occupiedShifts.length > 0 && (
+                                          <p className="text-indigo-400 font-semibold">
+                                            Shifts: {seat.occupiedShifts.join(", ")}
+                                          </p>
                                         )}
-                                        {seat.shift?.name && !isShiftReserved && (
-                                          <p className="text-indigo-400">{seat.shift.name} shift</p>
+                                        {seat.assignedStudents.length > 0 && (
+                                          <div className="mt-1.5 pt-1.5 border-t border-border/50 space-y-1">
+                                            <p className="font-medium text-muted-foreground text-[10px]">Assigned Students:</p>
+                                            {seat.assignedStudents.map((st: any) => (
+                                              <div key={st.id} className="text-foreground flex flex-col font-medium">
+                                                <span>👤 {st.fullName}</span>
+                                                <span className="text-[10px] text-muted-foreground pl-3">({st.shift?.name || "Any Shift"})</span>
+                                              </div>
+                                            ))}
+                                          </div>
                                         )}
-                                        {student && <p className="text-foreground">👤 {student.fullName}</p>}
                                       </div>
                                     </TooltipContent>
                                   </Tooltip>
@@ -335,9 +403,10 @@ export function SeatsPage() {
             <DialogTitle>Seat {selectedSeat?.seatNumber}</DialogTitle>
           </DialogHeader>
           {selectedSeat && (() => {
-            const effectiveStatus = getEffectiveStatus(selectedSeat);
-            const bookedShifts = getSeatBookedShifts(selectedSeat);
-            const colors = SEAT_STATUS_COLORS[effectiveStatus as keyof typeof SEAT_STATUS_COLORS] || SEAT_STATUS_COLORS.AVAILABLE;
+            const effectiveStatus = selectedSeat.effectiveStatus;
+            const colors = getSeatColor(effectiveStatus);
+            const assignedStudents = selectedSeat.assignedStudents || [];
+            
             return (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -347,7 +416,7 @@ export function SeatsPage() {
                       "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
                       colors.bg, colors.text
                     )}>
-                      {effectiveStatus}
+                      {effectiveStatus === "OCCUPIED" ? "Full Occupied" : effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : effectiveStatus}
                     </span>
                   </div>
                   <div>
@@ -358,46 +427,72 @@ export function SeatsPage() {
                     <p className="text-muted-foreground text-xs mb-1">Type</p>
                     <p className="font-medium">{selectedSeat.seatType}</p>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Shift</p>
-                    <p className="font-medium">{selectedSeat.shift?.name ?? "Any Shift"}</p>
-                  </div>
                 </div>
 
-                {/* Show which shifts this seat is booked in */}
-                {bookedShifts.length > 0 && (
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <p className="text-xs text-amber-400 font-medium mb-1">⚠️ Reserved in shifts:</p>
+                {/* Show which shifts this seat is occupied in */}
+                {effectiveStatus === "PARTIAL_OCCUPIED" && selectedSeat.occupiedShifts.length > 0 && (
+                  <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                    <p className="text-xs text-indigo-400 font-medium mb-1">Occupied in shifts:</p>
                     <div className="flex flex-wrap gap-1">
-                      {bookedShifts.map((sh) => (
-                        <span key={sh.id} className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">
-                          {sh.name}
+                      {selectedSeat.occupiedShifts.map((shName: string) => (
+                        <span key={shName} className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">
+                          {shName}
                         </span>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {selectedSeat.students?.[0] && (
-                  <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <p className="text-xs text-muted-foreground mb-1">Assigned to</p>
-                    <p className="font-medium text-sm">{selectedSeat.students[0].fullName}</p>
-                    <p className="text-xs text-muted-foreground">{selectedSeat.students[0].studentId}</p>
-                    {selectedSeat.students[0].shift && (
-                      <p className="text-xs text-indigo-400 mt-0.5">Shift: {selectedSeat.students[0].shift.name}</p>
-                    )}
+                {/* Assigned students details */}
+                {assignedStudents.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Assigned Students</p>
+                    {assignedStudents.map((student: any) => (
+                      <div 
+                        key={student.id} 
+                        onClick={() => {
+                          setDetailStudentId(student.id);
+                          setStudentDetailOpen(true);
+                        }}
+                        className="p-3 rounded-lg bg-muted/50 border border-border/50 hover:bg-muted cursor-pointer transition-colors"
+                      >
+                        <p className="font-semibold text-sm text-primary hover:underline flex items-center gap-1">
+                          👤 {student.fullName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{student.studentId}</p>
+                        {student.shift && (
+                          <p className="text-xs text-indigo-400 mt-1">Shift: {student.shift.name} ({student.shift.startTime} - {student.shift.endTime})</p>
+                        )}
+                        <p className="text-[10px] text-emerald-400 mt-1.5 hover:underline font-semibold">Click to view full details →</p>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-2">
-                  {selectedSeat.status === "OCCUPIED" && (
-                    <Button variant="outline" size="sm" className="text-amber-500" onClick={() => handleVacate(selectedSeat.id)}>
-                      <UserMinus className="w-4 h-4 mr-1" />Vacate
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
+                  {selectedSeat.seatRecords?.some((r: Seat) => r.status === "OCCUPIED" || (r.students && r.students.length > 0)) ? (
+                    <Button variant="outline" size="sm" className="text-amber-500" onClick={async () => {
+                      const occupiedRecords = selectedSeat.seatRecords.filter((r: Seat) => r.status === "OCCUPIED" || (r.students && r.students.length > 0));
+                      for (const r of occupiedRecords) {
+                        await vacateSeat(r.id);
+                      }
+                      toast.success("Seat vacated in all occupied shifts");
+                      setSeatInfoOpen(false);
+                      loadSeats();
+                    }}>
+                      <UserMinus className="w-4 h-4 mr-1" />Vacate All Shifts
                     </Button>
-                  )}
-                  {selectedSeat.status !== "OCCUPIED" && (
-                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(selectedSeat.id)}>
-                      <Trash2 className="w-4 h-4 mr-1" />Delete
+                  ) : (
+                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={async () => {
+                      if (!confirm(`Are you sure you want to delete seat ${selectedSeat.seatNumber}? This will delete all its shift configurations.`)) return;
+                      for (const r of selectedSeat.seatRecords) {
+                        await deleteSeat(r.id);
+                      }
+                      toast.success("Seat deleted");
+                      setSeatInfoOpen(false);
+                      loadSeats();
+                    }}>
+                      <Trash2 className="w-4 h-4 mr-1" />Delete Seat
                     </Button>
                   )}
                 </div>
@@ -406,6 +501,13 @@ export function SeatsPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Student detail dialog */}
+      <StudentDetailDialog
+        studentId={detailStudentId || ""}
+        open={studentDetailOpen}
+        onOpenChange={setStudentDetailOpen}
+      />
 
       {/* Add single seat */}
       <SeatDialog

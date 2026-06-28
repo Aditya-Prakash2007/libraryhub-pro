@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Edit, Trash2, UserX, UserCheck,
+  ArrowLeft, Edit, Trash2, UserX, UserCheck, Bell,
   Phone, Mail, MapPin, Grid3X3, Clock, CreditCard,
   CalendarCheck, FileText, Download, QrCode, Zap,
 } from "lucide-react";
@@ -18,6 +18,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { formatDate, formatCurrency, getInitials, formatDateTime } from "@/lib/utils";
 import { deleteStudent, toggleStudentStatus } from "@/actions/students";
+import { sendSingleFeeReminder } from "@/actions/fees";
+
 
 interface StudentDetailPageProps {
   student: {
@@ -64,6 +66,7 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const handleDelete = async () => {
     if (!confirm(`Permanently delete "${s.fullName}"? This cannot be undone.`)) return;
@@ -91,6 +94,17 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
     setToggling(false);
   };
 
+  const handleSendReminder = async () => {
+    setSendingReminder(true);
+    const result = await sendSingleFeeReminder(s.id);
+    if ("error" in result) {
+      toast.error(result.error);
+    } else {
+      toast.success("Fee reminder sent successfully! 🔔");
+    }
+    setSendingReminder(false);
+  };
+
   const statusColor = (status: string) => ({
     PRESENT: "bg-emerald-500/20 text-emerald-400",
     ABSENT: "bg-rose-500/20 text-rose-400",
@@ -110,6 +124,17 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
           <p className="text-muted-foreground text-sm">{s.studentId}</p>
         </div>
         <div className="flex items-center gap-2">
+          {s.status === "ACTIVE" && s.paymentStatus !== "PAID" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 border-amber-500/30"
+              onClick={handleSendReminder}
+              loading={sendingReminder}
+            >
+              <Bell className="w-4 h-4 mr-1" /> Send Reminder
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -136,6 +161,7 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
           </Button>
         </div>
       </div>
+
 
       {/* Profile card */}
       <Card className="overflow-hidden">

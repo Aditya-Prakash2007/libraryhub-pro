@@ -353,7 +353,7 @@ export async function getPayments(params?: {
       prisma.payment.findMany({
         where,
         include: {
-          student: { select: { fullName: true, studentId: true, profilePhoto: true } },
+          student: { select: { id: true, fullName: true, studentId: true, profilePhoto: true } },
           invoice: { select: { invoiceNumber: true } },
         },
         orderBy: { createdAt: "desc" },

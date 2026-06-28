@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Plus, QrCode, RefreshCw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,12 @@ interface Payment {
   lateFee?: number | null;
   paidAt?: Date | null;
   createdAt: Date;
-  student: { fullName: string; studentId: string; profilePhoto?: string | null };
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
+  student: { id: string; fullName: string; studentId: string; profilePhoto?: string | null };
   invoice?: { invoiceNumber: string } | null;
 }
+
 
 const STATUS_COLORS: Record<string, string> = {
   PAID:     "bg-emerald-500/15 text-emerald-500",
@@ -82,21 +86,26 @@ export function PaymentsPage() {
     </span>
   );
 
+  const getPaymentMonth = (row: Payment) => {
+    const date = row.periodStart ? new Date(row.periodStart) : (row.paidAt ? new Date(row.paidAt) : new Date(row.createdAt));
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  };
+
   const columns: Column<Payment>[] = [
     {
       key: "student",
       header: "Student",
       cell: (row) => (
-        <div className="flex items-center gap-3">
+        <Link href={`/admin/students/${row.student.id}`} className="flex items-center gap-3 hover:opacity-85">
           <Avatar className="w-8 h-8">
             <AvatarImage src={row.student.profilePhoto || ""} />
             <AvatarFallback className="text-xs">{getInitials(row.student.fullName)}</AvatarFallback>
           </Avatar>
           <div>
-            <p className="font-medium text-sm">{row.student.fullName}</p>
+            <p className="font-medium text-sm text-indigo-400 hover:underline">{row.student.fullName}</p>
             <p className="text-xs text-muted-foreground">{row.student.studentId}</p>
           </div>
-        </div>
+        </Link>
       ),
     },
     {
@@ -111,11 +120,12 @@ export function PaymentsPage() {
     },
     {
       key: "type",
-      header: "Type",
+      header: "Type & Month",
       cell: (row) => (
         <div>
-          <p className="text-sm">{row.paymentType.replace(/_/g, " ")}</p>
-          <p className="text-xs text-muted-foreground">{row.paymentMode}</p>
+          <p className="text-sm font-medium">{row.paymentType.replace(/_/g, " ")}</p>
+          <p className="text-xs text-indigo-400 font-semibold">{getPaymentMonth(row)}</p>
+          <p className="text-[10px] text-muted-foreground">{row.paymentMode}</p>
         </div>
       ),
     },
@@ -134,6 +144,7 @@ export function PaymentsPage() {
         </div>
       ),
     },
+
     {
       key: "status",
       header: "Status",

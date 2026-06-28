@@ -140,3 +140,80 @@ export async function getDueFeesData(params?: {
     return { error: "Failed to fetch due fees" };
   }
 }
+
+// Send fee reminder to a single student
+export async function sendSingleFeeReminder(studentId: string) {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, libraryId },
+      include: {
+        user: { select: { email: true } },
+        library: { select: { name: true } },
+      },
+    });
+
+    if (!student) return { error: "Student not found" };
+
+    const { sendFeeReminderEmail } = await import("@/services/brevo");
+    const { sendFeeReminderWhatsApp } = await import("@/services/whatsapp");
+
+    const dueDateStr = student.nextDueDate
+      ? student.nextDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long" })
+      : "Soon";
+
+    // Calculate days ahead: if nextDueDate is in the future or past
+    let daysAhead = 0;
+    if (student.nextDueDate) {
+      const diffTime = student.nextDueDate.getTime() - Date.now();
+      daysAhead = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
+    let emailSent = false;
+    let whatsappSent = false;
+
+    if (student.user?.email) {
+      await sendFeeReminderEmail(
+        student.user.email,
+        student.fullName,
+        student.library.name,
+        daysAhead,
+        student.monthlyFee,
+        dueDateStr
+      ).then(() => { emailSent = true; }).catch((e) => console.error("Email reminder error:", e));
+    }
+
+    if (student.phone) {
+      await sendFeeReminderWhatsApp(
+        student.phone,
+        student.fullName,
+        student.library.name,
+        daysAhead,
+        student.monthlyFee,
+        dueDateStr
+      ).then(() => { whatsappSent = true; }).catch((e) => console.error("WhatsApp reminder error:", e));
+    }
+
+    // Log this notification in DB
+    await prisma.notification.create({
+      data: {
+        userId: student.userId || "",
+        studentId: student.id,
+        libraryId,
+        title: "Fee Payment Reminder",
+        message: `Reminder sent for monthly fee of ₹${student.monthlyFee}. Next due date is ${dueDateStr}.`,
+        type: student.paymentStatus === "OVERDUE" ? "FEE_OVERDUE" : "FEE_DUE",
+        channel: "IN_APP",
+        sentAt: new Date(),
+      },
+    });
+
+    return { success: true, emailSent, whatsappSent };
+  } catch (error) {
+    console.error("Send single fee reminder error:", error);
+    return { error: "Failed to send reminder" };
+  }
+}
+
