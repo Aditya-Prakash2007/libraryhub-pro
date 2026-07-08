@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { WorkerDetailPage } from "@/components/workers/worker-detail-page";
 
-export const metadata: Metadata = { title: "Worker Details" };
+export const metadata: Metadata = { title: "Team Member Details" };
 
 interface PageProps {
   params: Promise<{ id: string }>;

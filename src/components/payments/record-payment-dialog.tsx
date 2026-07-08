@@ -17,6 +17,7 @@ import {
 import { paymentSchema } from "@/schemas";
 import { recordManualPayment } from "@/actions/payments";
 import { getStudents } from "@/actions/students";
+import { getWorkers } from "@/actions/workers";
 import type { PaymentFormData } from "@/schemas";
 
 interface RecordPaymentDialogProps {
@@ -31,6 +32,8 @@ export function RecordPaymentDialog({
 }: RecordPaymentDialogProps) {
   const [loading, setLoading] = useState(false);
   const [students, setStudents] = useState<{ id: string; fullName: string; studentId: string; monthlyFee: number }[]>([]);
+  const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
@@ -56,6 +59,14 @@ export function RecordPaymentDialog({
           })));
         }
       });
+      getWorkers().then((result) => {
+        if (!("error" in result)) {
+          setWorkers(result.workers.map((w: Record<string, unknown>) => ({
+            id: w.id as string,
+            name: w.name as string,
+          })));
+        }
+      });
     }
   }, [open]);
 
@@ -74,6 +85,7 @@ export function RecordPaymentDialog({
       paymentMode: data.paymentMode as "CASH" | "BANK_TRANSFER" | "UPI" | "CHEQUE",
       description: data.description,
       notes: data.notes,
+      collectedBy: selectedWorkerId || undefined,
     });
 
     if ("error" in result) {
@@ -88,6 +100,7 @@ export function RecordPaymentDialog({
         toast.success("Payment recorded successfully");
       }
       reset();
+      setSelectedWorkerId("");
       onSuccess();
     }
     setLoading(false);
@@ -117,6 +130,30 @@ export function RecordPaymentDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Team Member who collected */}
+          <div className="space-y-1.5">
+            <Label>Collected By (Team Member)</Label>
+            <Select
+              value={selectedWorkerId}
+              onValueChange={(v) => setSelectedWorkerId(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select team member (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— No one selected —</SelectItem>
+                {workers.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {workers.length === 0 && (
+              <p className="text-xs text-muted-foreground">No team members added yet.</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

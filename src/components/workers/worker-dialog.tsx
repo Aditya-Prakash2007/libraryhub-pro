@@ -94,7 +94,7 @@ export function WorkerDialog({ open, onOpenChange, worker, onSuccess }: WorkerDi
       if (res.error) {
         toast.error(res.error);
       } else {
-        toast.success(isEdit ? "Worker updated!" : "Worker registered!");
+        toast.success(isEdit ? "Team member updated!" : "Team member registered!");
         onSuccess();
         onOpenChange(false);
       }
@@ -110,7 +110,7 @@ export function WorkerDialog({ open, onOpenChange, worker, onSuccess }: WorkerDi
       <DialogContent className="sm:max-w-[500px] border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
-            {isEdit ? "Edit Worker Details" : "Register New Worker"}
+            {isEdit ? "Edit Team Member Details" : "Register New Team Member"}
           </DialogTitle>
         </DialogHeader>
 
@@ -118,7 +118,7 @@ export function WorkerDialog({ open, onOpenChange, worker, onSuccess }: WorkerDi
           {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="w-name" className="text-sm font-medium">
-              Worker Name <span className="text-destructive">*</span>
+              Team Member Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="w-name"
@@ -229,7 +229,7 @@ export function WorkerDialog({ open, onOpenChange, worker, onSuccess }: WorkerDi
               disabled={loading}
               className="bg-indigo-600 text-white hover:bg-indigo-700 font-semibold shadow-lg shadow-indigo-600/20"
             >
-              {loading ? "Saving..." : isEdit ? "Update Details" : "Register Worker"}
+              {loading ? "Saving..." : isEdit ? "Update Details" : "Register Team Member"}
             </Button>
           </DialogFooter>
         </form>

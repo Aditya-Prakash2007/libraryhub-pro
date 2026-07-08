@@ -171,13 +171,52 @@ export async function getWorkerDetails(id: string) {
       .filter(exp => new Date(exp.date) >= startOfMonth)
       .reduce((sum, exp) => sum + exp.amount, 0);
 
+    // Fetch payments collected by this worker
+    const payments = await prisma.payment.findMany({
+      where: {
+        libraryId,
+        status: { in: ["PAID", "PARTIAL"] },
+      },
+      include: {
+        student: { select: { id: true, fullName: true, studentId: true } },
+      },
+      orderBy: { paidAt: "desc" },
+    });
+
+    const collectedPayments = payments.filter((p) => {
+      const meta = p.metadata as Record<string, string> | null;
+      return meta?.collectedBy === id;
+    }).map(p => ({
+      id: p.id,
+      paymentId: p.paymentId,
+      amount: p.amount,
+      totalAmount: p.totalAmount,
+      paymentType: p.paymentType,
+      paymentMode: p.paymentMode,
+      status: p.status,
+      paidAt: p.paidAt,
+      studentName: p.student.fullName,
+      studentId: p.student.studentId,
+    }));
+
+    const collectedToday = collectedPayments
+      .filter(p => p.paidAt && new Date(p.paidAt) >= today)
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+
+    const collectedThisMonth = collectedPayments
+      .filter(p => p.paidAt && new Date(p.paidAt) >= startOfMonth)
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+
     return {
       worker: { ...worker, shifts },
       activeExpenses,
       archivedExpenses,
+      collectedPayments,
       stats: {
         spentToday,
         spentThisMonth,
+        collectedToday,
+        collectedThisMonth,
       },
     };
   } catch (error) {

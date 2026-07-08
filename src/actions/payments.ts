@@ -221,6 +221,7 @@ export async function recordManualPayment(data: {
   periodStart?: string;
   periodEnd?: string;
   notes?: string;
+  collectedBy?: string; // workerId of the team member who collected
 }) {
   try {
     const libraryId = await getAdminLibraryId();
@@ -269,7 +270,8 @@ export async function recordManualPayment(data: {
             ? `Partial payment. Balance due: ₹${balanceDue}. ${data.notes || ""}`
             : data.notes,
           totalAmount: data.amount,
-          lateFee: balanceDue, // store balance due in lateFee field
+          lateFee: balanceDue,
+          metadata: data.collectedBy ? { collectedBy: data.collectedBy } : undefined,
         },
       });
 
@@ -327,6 +329,48 @@ export async function recordManualPayment(data: {
   } catch (error) {
     console.error("Record manual payment error:", error);
     return { error: "Failed to record payment" };
+  }
+}
+
+// Get payments collected by a specific team member (worker)
+export async function getPaymentsByWorker(workerId: string, period: "today" | "month" = "month") {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startDate = period === "today" ? today : startOfMonth;
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        libraryId,
+        status: { in: ["PAID", "PARTIAL"] },
+        paidAt: { gte: startDate },
+      },
+      include: {
+        student: { select: { id: true, fullName: true, studentId: true } },
+      },
+      orderBy: { paidAt: "desc" },
+    });
+
+    // Filter by collectedBy in metadata
+    const filtered = payments.filter((p) => {
+      const meta = p.metadata as Record<string, string> | null;
+      return meta?.collectedBy === workerId;
+    });
+
+    const totalToday = filtered
+      .filter((p) => p.paidAt && new Date(p.paidAt) >= today)
+      .reduce((s, p) => s + p.totalAmount, 0);
+
+    const totalMonth = filtered.reduce((s, p) => s + p.totalAmount, 0);
+
+    return { payments: filtered, totalToday, totalMonth };
+  } catch (error) {
+    console.error("Get payments by worker error:", error);
+    return { error: "Failed to fetch payments" };
   }
 }
 

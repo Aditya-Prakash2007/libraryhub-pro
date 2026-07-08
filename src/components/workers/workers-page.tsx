@@ -84,7 +84,7 @@ export function WorkersPage() {
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load workers list");
+      toast.error("Failed to load team members list");
     } finally {
       setLoading(false);
     }
@@ -133,12 +133,12 @@ export function WorkersPage() {
       if (res.error) {
         toast.error(res.error);
       } else {
-        toast.success("Worker deleted successfully");
+        toast.success("Team member deleted successfully");
         handleDataRefresh();
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to delete worker");
+      toast.error("Failed to delete team member");
     }
   };
 
@@ -153,8 +153,8 @@ export function WorkersPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <PageHeader
-          title="Worker Management"
-          description="Manage library staff, shifts, and track custom worker expenses."
+          title="Team Member Management"
+          description="Manage library staff, shifts, and track custom team member expenses."
         />
         <Button
           onClick={() => {
@@ -173,10 +173,10 @@ export function WorkersPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Link2 className="w-4 h-4 text-indigo-400" />
-              Public Expense Tracker Link for Workers
+              Public Expense Tracker Link for Team Members
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Share this unique link with your workers. They can visit this page on their phone or computer to log receipts, repair costs, and daily expenses.
+              Share this unique link with your team members. They can visit this page on their phone or computer to log receipts, repair costs, and daily expenses.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-3">
@@ -233,7 +233,7 @@ export function WorkersPage() {
                 </div>
                 <CardHeader className="pb-2">
                   <CardDescription className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Today's Worker Expense
+                    Today's Team Member Expense
                   </CardDescription>
                   <CardTitle className="text-3xl font-extrabold tracking-tight text-foreground mt-1">
                     {formatCurrency(stats?.spentToday || 0)}
@@ -254,7 +254,7 @@ export function WorkersPage() {
                 </div>
                 <CardHeader className="pb-2">
                   <CardDescription className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Monthly Worker Expense
+                    Monthly Team Member Expense
                   </CardDescription>
                   <CardTitle className="text-3xl font-extrabold tracking-tight text-foreground mt-1">
                     {formatCurrency(stats?.spentThisMonth || 0)}
@@ -275,7 +275,7 @@ export function WorkersPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-indigo-400" />
-              Worker Expense Trend (Last 15 Days)
+              Team Member Expense Trend (Last 15 Days)
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
               Daily consolidated expenses across all library staff
@@ -286,7 +286,7 @@ export function WorkersPage() {
               <div className="w-full h-full bg-muted/20 animate-pulse rounded" />
             ) : chartData.length === 0 || chartData.every(d => d.amount === 0) ? (
               <div className="text-center py-6 text-xs text-muted-foreground">
-                No worker expenses logged in the last 15 days.
+                No team member expenses logged in the last 15 days.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -337,9 +337,9 @@ export function WorkersPage() {
       <Card className="border-border/60 bg-card">
         <CardHeader className="pb-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <CardTitle className="text-base font-semibold">Active Workers</CardTitle>
+            <CardTitle className="text-base font-semibold">Active Team Members</CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              A list of workers registered under your library.
+              A list of team members registered under your library.
             </CardDescription>
           </div>
           <div className="relative w-full md:w-72">
@@ -355,14 +355,14 @@ export function WorkersPage() {
         <CardContent className="p-0">
           {loading ? (
             <div className="py-20 text-center text-sm text-muted-foreground animate-pulse">
-              Loading worker database...
+              Loading team member database...
             </div>
           ) : filteredWorkers.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground space-y-2">
               <Info className="w-8 h-8 mx-auto opacity-40 text-indigo-400" />
-              <p className="text-sm font-medium">No workers found</p>
+              <p className="text-sm font-medium">No team members found</p>
               <p className="text-xs text-muted-foreground">
-                {searchQuery ? "Try refining your search query." : "Register a worker using the button above."}
+                {searchQuery ? "Try refining your search query." : "Register a team member using the button above."}
               </p>
             </div>
           ) : (
@@ -460,10 +460,10 @@ export function WorkersPage() {
                             <AlertDialogContent className="bg-card border-border">
                               <AlertDialogHeader>
                                 <AlertDialogTitle className="text-lg font-semibold text-destructive">
-                                  Delete Worker?
+                                  Delete Team Member?
                                 </AlertDialogTitle>
                                 <AlertDialogDescription className="text-sm text-muted-foreground">
-                                  Are you sure you want to delete worker <strong className="text-foreground">{worker.name}</strong>? This action will permanently remove their profile and all their recorded expenses. This cannot be undone.
+                                  Are you sure you want to delete team member <strong className="text-foreground">{worker.name}</strong>? This action will permanently remove their profile and all their recorded expenses. This cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

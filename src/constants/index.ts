@@ -98,7 +98,7 @@ export const ADMIN_NAV_ITEMS = [
   { title: "Attendance", href: "/admin/attendance", icon: "CalendarCheck" },
   { title: "Reports", href: "/admin/reports", icon: "BarChart3" },
   { title: "Notifications", href: "/admin/notifications", icon: "Bell" },
-  { title: "Workers", href: "/admin/workers", icon: "Briefcase" },
+  { title: "Team Members", href: "/admin/workers", icon: "Briefcase" },
   { title: "Upgrade Plan", href: "/admin/subscription", icon: "Zap" },
   { title: "Settings", href: "/admin/settings", icon: "Settings" },
   { title: "Feedback", href: "/admin/feedback", icon: "MessageSquare" },

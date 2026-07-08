@@ -22,6 +22,9 @@ import { studentSchema } from "@/schemas";
 import { createStudent, updateStudent } from "@/actions/students";
 import { getSeats } from "@/actions/seats";
 import { getShifts } from "@/actions/shifts";
+import { recordManualPayment } from "@/actions/payments";
+import { getWorkers } from "@/actions/workers";
+import { useLoading } from "@/providers/loading-provider";
 import type { StudentFormData } from "@/schemas";
 import { SEAT_STATUS_COLORS } from "@/constants";
 import { cn } from "@/lib/utils";
@@ -144,6 +147,28 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
   const [seatsLoading, setSeatsLoading] = useState(false);
   const [floorFilter, setFloorFilter] = useState<number | "all">("all");
   const isEdit = !!student?.id;
+  const { setIsLoading } = useLoading();
+
+  // Payment integration states
+  const [createdStudentInfo, setCreatedStudentInfo] = useState<{
+    id: string;
+    fullName: string;
+    payableAmount: number;
+  } | null>(null);
+  const [paymentType, setPaymentType] = useState<"MONTHLY" | "REGISTRATION" | "OTHER">("MONTHLY");
+  const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI" | "BANK_TRANSFER" | "CHEQUE">("CASH");
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentDescription, setPaymentDescription] = useState<string>("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentWorkerId, setPaymentWorkerId] = useState<string>("");
+  const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (createdStudentInfo) {
+      setPaymentAmount(createdStudentInfo.payableAmount);
+      setPaymentDescription(`First month fee - ${createdStudentInfo.fullName}`);
+    }
+  }, [createdStudentInfo]);
 
   const {
     register,
@@ -212,6 +237,12 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
     if (open) {
       loadShifts();
       loadSeats();
+      // Load team members for payment attribution
+      getWorkers().then((res) => {
+        if (!("error" in res)) {
+          setWorkers(res.workers.map((w: Record<string, unknown>) => ({ id: w.id as string, name: w.name as string })));
+        }
+      });
     }
   }, [open, loadShifts, loadSeats]);
 
@@ -233,14 +264,30 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
     }
 
     setLoading(true);
+    setIsLoading(true);
     try {
       const result = isEdit && student?.id
         ? await updateStudent(student.id, data)
         : await createStudent(data);
       if ("error" in result) toast.error(result.error);
-      else { toast.success(isEdit ? "Student updated!" : "Student added!"); onSuccess(); }
+      else {
+        toast.success(isEdit ? "Student updated!" : "Student added!");
+        if (!isEdit && result && "student" in result && result.student) {
+          const stObj = result.student as any;
+          setCreatedStudentInfo({
+            id: stObj.id as string,
+            fullName: stObj.fullName as string,
+            payableAmount: Math.max(0, (stObj.monthlyFee as number) - ((stObj.discountAmount as number) || 0)),
+          });
+        } else {
+          onSuccess();
+        }
+      }
     } catch { toast.error("Something went wrong"); }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
   };
 
   // Simple text field
@@ -257,6 +304,154 @@ export function StudentDialog({ open, onOpenChange, student, onSuccess, shifts: 
   // ── Seat map ──
   const floors = Array.from(new Set(seats.map((s) => s.floor))).sort((a, b) => a - b);
   const visibleSeats = floorFilter === "all" ? seats : seats.filter((s) => s.floor === floorFilter);
+
+  if (createdStudentInfo) {
+    return (
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); onSuccess(); } }}>
+        <DialogContent
+          className="max-w-md bg-card border-border p-6"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
+              Record Payment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-medium">
+              🎉 Student added successfully! Set up their payment below.
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Payment Type *</Label>
+                <Select
+                  value={paymentType}
+                  onValueChange={(v) => setPaymentType(v as any)}
+                >
+                  <SelectTrigger className="bg-background border-border/60 text-sm h-10"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-border">
+                    <SelectItem value="MONTHLY">Monthly</SelectItem>
+                    <SelectItem value="REGISTRATION">Registration</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Payment Mode *</Label>
+                <Select
+                  value={paymentMode}
+                  onValueChange={(v) => setPaymentMode(v as any)}
+                >
+                  <SelectTrigger className="bg-background border-border/60 text-sm h-10"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-border">
+                    <SelectItem value="CASH">Cash</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                    <SelectItem value="CHEQUE">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Amount (₹) *</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none z-10 font-bold">
+                  ₹
+                </span>
+                <Input
+                  type="number"
+                  step="any"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                  className="bg-background border-border/60 pl-7 text-sm h-10"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Description</Label>
+              <Input
+                placeholder="e.g. Admission & first month fee"
+                value={paymentDescription}
+                onChange={(e) => setPaymentDescription(e.target.value)}
+                className="bg-background border-border/60 text-sm h-10"
+              />
+            </div>
+
+            {/* Team Member Selector */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Collected By (Team Member)</Label>
+              <Select
+                value={paymentWorkerId}
+                onValueChange={(v) => setPaymentWorkerId(v === "__none__" ? "" : v)}
+              >
+                <SelectTrigger className="bg-background border-border/60 text-sm h-10">
+                  <SelectValue placeholder="Select team member (optional)" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-border">
+                  <SelectItem value="__none__">— No one selected —</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 border-t border-border/40 pt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setCreatedStudentInfo(null);
+                onOpenChange(false);
+                onSuccess();
+              }}
+              className="hover:bg-accent/40"
+            >
+              Skip / Close
+            </Button>
+            <Button
+              type="button"
+              loading={paymentLoading}
+              onClick={async () => {
+                setPaymentLoading(true);
+                setIsLoading(true);
+                try {
+                  const res = await recordManualPayment({
+                    studentId: createdStudentInfo.id,
+                    amount: paymentAmount,
+                    paymentType: paymentType,
+                    paymentMode: paymentMode,
+                    description: paymentDescription || undefined,
+                    collectedBy: paymentWorkerId || undefined,
+                  });
+                  if ("error" in res) {
+                     toast.error(res.error);
+                  } else {
+                     toast.success("Payment recorded successfully!");
+                     setCreatedStudentInfo(null);
+                     onOpenChange(false);
+                     onSuccess();
+                  }
+                } catch {
+                   toast.error("Failed to record payment");
+                } finally {
+                   setPaymentLoading(false);
+                   setIsLoading(false);
+                }
+              }}
+              className="bg-indigo-600 text-white hover:bg-indigo-700 font-semibold shadow-lg shadow-indigo-600/20"
+            >
+              Record Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onOpenChange(false); }}>
