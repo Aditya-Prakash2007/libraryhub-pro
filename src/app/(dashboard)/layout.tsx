@@ -1,6 +1,5 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { Sidebar } from "@/components/shared/sidebar";
 import { TopNav } from "@/components/shared/topnav";
 import { CommandMenu } from "@/components/shared/command-menu";
@@ -18,15 +17,8 @@ export default async function DashboardLayout({
   }
 
   const role = session.user.role as "LIBRARY_ADMIN" | "STUDENT" | "SUPER_ADMIN";
-
-  let libraryName: string | undefined;
-  if (role === "LIBRARY_ADMIN" && session.user.libraryId) {
-    const library = await prisma.library.findUnique({
-      where: { id: session.user.libraryId },
-      select: { name: true },
-    });
-    libraryName = library?.name;
-  }
+  // Library name comes from session — no extra DB call needed
+  const libraryName = (session.user as any).libraryName as string | undefined;
 
   // For LIBRARY_ADMIN wrap in subscription guard
   const mainContent = (

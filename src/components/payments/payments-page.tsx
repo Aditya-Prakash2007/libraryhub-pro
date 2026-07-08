@@ -212,9 +212,6 @@ export function PaymentsPage() {
                 <SelectItem value="PAID">✅ Paid</SelectItem>
                 <SelectItem value="PENDING">⏳ Pending</SelectItem>
                 <SelectItem value="PARTIAL">🟡 Partial (Dues)</SelectItem>
-                <SelectItem value="OVERDUE">🔴 Overdue</SelectItem>
-                <SelectItem value="FAILED">❌ Failed</SelectItem>
-                <SelectItem value="REFUNDED">↩️ Refunded</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -3,6 +3,7 @@
 import { ThemeProvider } from "./theme-provider";
 import { AuthSessionProvider } from "./session-provider";
 import { ToastProvider } from "./toast-provider";
+import { LoadingProvider } from "./loading-provider";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -17,7 +18,9 @@ export function Providers({ children }: ProvidersProps) {
         enableSystem
         disableTransitionOnChange
       >
-        {children}
+        <LoadingProvider>
+          {children}
+        </LoadingProvider>
         <ToastProvider />
       </ThemeProvider>
     </AuthSessionProvider>

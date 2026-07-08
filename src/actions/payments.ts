@@ -343,6 +343,53 @@ export async function getPayments(params?: {
 
     const { studentId, status = "all", page = 1, limit = 20 } = params || {};
 
+    if (status === "PENDING") {
+      const now = new Date();
+      const studentWhere = {
+        libraryId,
+        status: "ACTIVE" as const,
+        ...(studentId && { id: studentId }),
+        OR: [
+          { lastPaymentDate: null },
+          { nextDueDate: { lte: now } }
+        ]
+      };
+
+      const [students, total] = await prisma.$transaction([
+        prisma.student.findMany({
+          where: studentWhere,
+          orderBy: { nextDueDate: "asc" },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        prisma.student.count({ where: studentWhere })
+      ]);
+
+      const payments = students.map(s => {
+        const actualFee = Math.max(0, s.monthlyFee - (s.discountAmount || 0));
+        return {
+          id: s.id,
+          paymentId: "PENDING",
+          amount: actualFee,
+          totalAmount: actualFee,
+          paymentType: "MONTHLY",
+          paymentMode: "DUE",
+          status: "PENDING",
+          paidAt: null,
+          createdAt: s.nextDueDate || s.joiningDate,
+          student: {
+            id: s.id,
+            fullName: s.fullName,
+            studentId: s.studentId,
+            profilePhoto: s.profilePhoto
+          },
+          invoice: null
+        };
+      });
+
+      return { payments, total, pages: Math.ceil(total / limit) };
+    }
+
     const where = {
       libraryId,
       ...(studentId && { studentId }),

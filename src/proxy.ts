@@ -1,6 +1,5 @@
 // Middleware - Route Protection & Role-Based Access Control with 48‑hour trial block
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -12,6 +11,7 @@ const publicRoutes = [
   "/reset-password",
   "/verify-email",
   "/upgrade", // allow upgrade page for blocked users
+  "/scan",    // QR scan page — handles its own auth redirect
 ];
 
 export default auth(async function middleware(req) {
@@ -47,31 +47,6 @@ export default auth(async function middleware(req) {
   // Block suspended accounts
   if (userStatus === "SUSPENDED") {
     return NextResponse.redirect(new URL("/login?error=suspended", nextUrl));
-  }
-
-  // ----- 48‑hour trial expiration block -----
-  let library = null;
-  if (libraryId) {
-    try {
-      library = await prisma.library.findUnique({
-        where: { id: libraryId },
-        select: {
-          trialEndsAt: true,
-          isTrialActive: true,
-          subscription: { select: { status: true } },
-        },
-      });
-    } catch (error) {
-      // Log the error but do not block the request – allow normal flow
-      console.error('Middleware: failed to fetch library for trial check', error);
-    }
-    const now = new Date();
-    const trialEnded = library?.trialEndsAt && now > library.trialEndsAt;
-    const hasActiveSub = library?.subscription?.status === "ACTIVE";
-    if (trialEnded && !hasActiveSub && !nextUrl.pathname.startsWith("/upgrade")) {
-      // redirect all non‑upgrade pages to the upgrade page
-      return NextResponse.redirect(new URL("/upgrade", nextUrl));
-    }
   }
 
   // Role based access control

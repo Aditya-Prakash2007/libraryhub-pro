@@ -295,15 +295,15 @@ export function PublicPaymentPage({ library }: { library: Library }) {
                               <div className="w-40 h-40 flex items-center justify-center">
                                 <QrCode className="w-8 h-8 text-muted-foreground animate-pulse" />
                               </div>
+                            ) : library.customQrCode ? (
+                              <div className="text-center space-y-2">
+                                <img src={library.customQrCode} alt="Custom Payment QR" className="max-w-[200px] max-h-[200px] object-contain mx-auto rounded-lg" />
+                                <p className="text-[10px] text-muted-foreground font-medium">Scan to pay library (Custom QR)</p>
+                              </div>
                             ) : upiQrUrl && library.upiId ? (
                               <div className="text-center space-y-2">
                                 <img src={upiQrUrl} alt="UPI Payment QR" className="w-40 h-40 mx-auto" />
                                 <p className="text-[10px] text-muted-foreground font-mono">Dynamic QR for ₹{upiAmount}</p>
-                              </div>
-                            ) : library.customQrCode ? (
-                              <div className="text-center space-y-2">
-                                <img src={library.customQrCode} alt="Custom Payment QR" className="w-40 h-40 object-contain mx-auto" />
-                                <p className="text-[10px] text-muted-foreground">Scan to pay library</p>
                               </div>
                             ) : null}
                           </div>

@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Edit, Trash2, UserX, UserCheck, Bell,
   Phone, Mail, MapPin, Grid3X3, Clock, CreditCard,
-  CalendarCheck, FileText, Download, QrCode, Zap,
+  CalendarCheck, FileText, Download, Zap,
+  LogIn, LogOut,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -290,7 +291,55 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
                   <span className="text-amber-500">🔥 {s.currentStreak} days</span>
                 </div>
               </div>
+
+              {/* Weekly In/Out History */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">This Week&apos;s In / Out Times</p>
+                <div className="rounded-lg border border-border/40 overflow-hidden">
+                  <div className="grid grid-cols-4 gap-0 bg-muted/30 px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    <span>Day</span>
+                    <span className="text-emerald-500 flex items-center gap-1"><LogIn className="w-3 h-3" />In</span>
+                    <span className="text-rose-400 flex items-center gap-1"><LogOut className="w-3 h-3" />Out</span>
+                    <span>Status</span>
+                  </div>
+                  {(() => {
+                    const rows = [];
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    for (let i = 0; i < 7; i++) {
+                      const d = new Date();
+                      d.setDate(d.getDate() - i);
+                      d.setHours(0, 0, 0, 0);
+                      const dateStr = d.toISOString().split("T")[0];
+                      const rec = s.attendance.find((a) => {
+                        const rd = new Date(a.date);
+                        rd.setHours(0, 0, 0, 0);
+                        return rd.toISOString().split("T")[0] === dateStr;
+                      });
+                      const label = i === 0 ? "Today" : i === 1 ? "Yesterday" : d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+                      const fmtT = (dt?: Date | null) =>
+                        dt ? new Date(dt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
+                      const statusCls = rec
+                        ? { PRESENT: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", ABSENT: "text-rose-400 bg-rose-500/10 border-rose-500/20", LATE: "text-amber-400 bg-amber-500/10 border-amber-500/20", HALF_DAY: "text-blue-400 bg-blue-500/10 border-blue-500/20" }[rec.status] ?? "text-muted-foreground bg-muted border-border"
+                        : "text-slate-500 bg-slate-800/30 border-slate-700/30";
+                      rows.push(
+                        <div key={dateStr} className={`grid grid-cols-4 gap-0 px-3 py-2.5 text-xs border-t border-border/30 ${i === 0 ? "bg-indigo-500/5" : "hover:bg-muted/20"} transition-colors`}>
+                          <span className={`font-medium ${i === 0 ? "text-indigo-400" : "text-foreground"}`}>{label}</span>
+                          <span className="text-muted-foreground font-mono">{fmtT(rec?.checkInTime)}</span>
+                          <span className="text-muted-foreground font-mono">{fmtT(rec?.checkOutTime)}</span>
+                          <span className={`inline-flex self-center text-[9px] px-1.5 py-0.5 rounded-full border font-semibold w-fit ${statusCls}`}>
+                            {rec ? rec.status : "ABSENT"}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return rows;
+                  })()}
+                </div>
+              </div>
+
               {/* Calendar grid */}
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Recent Calendar</p>
               <div className="flex flex-wrap gap-1">
                 {s.attendance.slice(0, 60).reverse().map((a) => (
                   <div

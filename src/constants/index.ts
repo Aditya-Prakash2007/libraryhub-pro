@@ -98,8 +98,10 @@ export const ADMIN_NAV_ITEMS = [
   { title: "Attendance", href: "/admin/attendance", icon: "CalendarCheck" },
   { title: "Reports", href: "/admin/reports", icon: "BarChart3" },
   { title: "Notifications", href: "/admin/notifications", icon: "Bell" },
+  { title: "Workers", href: "/admin/workers", icon: "Briefcase" },
   { title: "Upgrade Plan", href: "/admin/subscription", icon: "Zap" },
   { title: "Settings", href: "/admin/settings", icon: "Settings" },
+  { title: "Feedback", href: "/admin/feedback", icon: "MessageSquare" },
 ];
 
 export const STUDENT_NAV_ITEMS = [
@@ -109,6 +111,7 @@ export const STUDENT_NAV_ITEMS = [
   { title: "Attendance", href: "/student/attendance", icon: "CalendarCheck" },
   { title: "Payments", href: "/student/payments", icon: "CreditCard" },
   { title: "Notifications", href: "/student/notifications", icon: "Bell" },
+  { title: "Feedback", href: "/student/feedback", icon: "MessageSquare" },
 ];
 
 export const SUPERADMIN_NAV_ITEMS = [
@@ -131,6 +134,11 @@ export const SUPERADMIN_NAV_ITEMS = [
     title: "Analytics",
     href: "/superadmin/analytics",
     icon: "BarChart3",
+  },
+  {
+    title: "Feedback",
+    href: "/superadmin/feedback",
+    icon: "MessageSquare",
   },
 ];
 

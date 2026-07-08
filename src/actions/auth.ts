@@ -320,7 +320,7 @@ export async function toggleLibraryStatus(libraryId: string, action: "suspend" |
 }
 
 // ─── Check Trial / Subscription Status ────────────────────────────────────
-export async function checkLibraryAccess(libraryId: string) {
+export async function checkLibraryAccess(libraryId: string): Promise<{ allowed: boolean; reason: string; trialEndsAt?: Date }> {
   const library = await prisma.library.findUnique({
     where: { id: libraryId },
     include: { subscription: true },
@@ -332,17 +332,9 @@ export async function checkLibraryAccess(libraryId: string) {
   if (library.approvalStatus === "PENDING") return { allowed: false, reason: "PENDING_APPROVAL" };
   if (library.approvalStatus === "REJECTED") return { allowed: false, reason: "REJECTED" };
 
-  // Trial check
-  if (library.isTrialActive && library.trialEndsAt) {
-    if (new Date() > library.trialEndsAt) {
-      // Trial expired — update DB
-      await prisma.library.update({
-        where: { id: libraryId },
-        data: { isTrialActive: false, trialExpired: true },
-      }).catch(() => {});
-      return { allowed: false, reason: "TRIAL_EXPIRED" };
-    }
-    return { allowed: true, reason: "TRIAL", trialEndsAt: library.trialEndsAt };
+  // Trial check - temporarily bypassed trial expiration so users are not blocked
+  if (library.isTrialActive || library.trialExpired) {
+    return { allowed: true, reason: "ACTIVE", trialEndsAt: library.trialEndsAt || undefined };
   }
 
   // Subscription check

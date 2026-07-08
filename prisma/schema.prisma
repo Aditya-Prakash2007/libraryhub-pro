@@ -161,24 +161,24 @@ enum WaitlistStatus {
 
 // ─── New: Shift type enum ──────────────────────────────────────────────────
 enum ShiftType {
-  MORNING     // Shift A
-  AFTERNOON   // Shift B
-  NIGHT       // Shift C
-  FULL_DAY    // All 3 shifts
-  CUSTOM      // Any combination
+  MORNING // Shift A
+  AFTERNOON // Shift B
+  NIGHT // Shift C
+  FULL_DAY // All 3 shifts
+  CUSTOM // Any combination
 }
 
 // ==================== MODELS ====================
 
 model User {
-  id                String      @id @default(auto()) @map("_id") @db.ObjectId
+  id                String     @id @default(auto()) @map("_id") @db.ObjectId
   name              String
-  email             String      @unique
+  email             String     @unique
   emailVerified     DateTime?
   image             String?
   password          String?
-  role              UserRole    @default(STUDENT)
-  status            UserStatus  @default(PENDING_VERIFICATION)
+  role              UserRole   @default(STUDENT)
+  status            UserStatus @default(PENDING_VERIFICATION)
   phone             String?
   otp               String?
   otpExpiry         DateTime?
@@ -187,16 +187,16 @@ model User {
   verifyToken       String?
   verifyTokenExpiry DateTime?
   lastLogin         DateTime?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
-  library           Library?    @relation("LibraryAdmin")
-  student           Student?
-  accounts          Account[]
-  sessions          Session[]
-  activityLogs      ActivityLog[]
-  auditLogs         AuditLog[]
-  notifications     Notification[]
+  library       Library?       @relation("LibraryAdmin")
+  student       Student?
+  accounts      Account[]
+  sessions      Session[]
+  activityLogs  ActivityLog[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -243,66 +243,70 @@ model VerificationToken {
 }
 
 model Library {
-  id               String         @id @default(auto()) @map("_id") @db.ObjectId
-  name             String
-  slug             String         @unique
-  description      String?
-  logo             String?
-  coverImage       String?
-  address          String?
-  city             String?
-  state            String?
-  pincode          String?
-  phone            String?
-  email            String?
-  website          String?
-  adminId          String         @unique @db.ObjectId
-  isActive         Boolean        @default(true)
-  isSuspended      Boolean        @default(false)
-  suspendedReason  String?
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  slug            String         @unique
+  description     String?
+  logo            String?
+  coverImage      String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  phone           String?
+  email           String?
+  website         String?
+  adminId         String         @unique @db.ObjectId
+  isActive        Boolean        @default(true)
+  isSuspended     Boolean        @default(false)
+  suspendedReason String?
   // ─── Approval system ───────────────────────────────────────────────────
-  approvalStatus   ApprovalStatus @default(PENDING)
-  approvedAt       DateTime?
-  approvedBy       String?        // Super Admin user ID
-  rejectedAt       DateTime?
-  rejectedReason   String?
+  approvalStatus  ApprovalStatus @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String? // Super Admin user ID
+  rejectedAt      DateTime?
+  rejectedReason  String?
   // ─── Trial system ──────────────────────────────────────────────────────
-  trialStartedAt   DateTime?
-  trialEndsAt      DateTime?
-  isTrialActive    Boolean        @default(false)
-  trialExpired     Boolean        @default(false)
+  trialStartedAt  DateTime?
+  trialEndsAt     DateTime?
+  isTrialActive   Boolean        @default(false)
+  trialExpired    Boolean        @default(false)
   // ───────────────────────────────────────────────────────────────────────
-  totalSeats       Int            @default(0)
-  totalFloors      Int            @default(1)
-  openingTime      String         @default("06:00")
-  closingTime      String         @default("22:00")
-  primaryColor     String         @default("#6366f1")
-  secondaryColor   String         @default("#8b5cf6")
-  currency         String         @default("INR")
-  timezone         String         @default("Asia/Kolkata")
-  razorpayKeyId    String?
-  razorpaySecret   String?
-  upiId            String?
-  customQrCode     String?
-  smtpConfig       Json?
-  whatsappConfig   Json?
-  smsConfig        Json?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  totalSeats      Int            @default(0)
+  totalFloors     Int            @default(1)
+  openingTime     String         @default("06:00")
+  closingTime     String         @default("22:00")
+  primaryColor    String         @default("#6366f1")
+  secondaryColor  String         @default("#8b5cf6")
+  currency        String         @default("INR")
+  timezone        String         @default("Asia/Kolkata")
+  razorpayKeyId   String?
+  razorpaySecret  String?
+  upiId           String?
+  customQrCode    String?
+  smtpConfig      Json?
+  whatsappConfig  Json?
+  smsConfig       Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  admin          User           @relation("LibraryAdmin", fields: [adminId], references: [id])
-  students       Student[]
-  seats          Seat[]
-  shifts         Shift[]
-  payments       Payment[]
-  attendance     Attendance[]
-  notifications  Notification[]
-  documents      Document[]
-  activityLogs   ActivityLog[]
-  auditLogs      AuditLog[]
-  waitlist       Waitlist[]
-  subscription   Subscription?
-  settings       Settings?
+  admin            User              @relation("LibraryAdmin", fields: [adminId], references: [id])
+  students         Student[]
+  seats            Seat[]
+  shifts           Shift[]
+  payments         Payment[]
+  attendance       Attendance[]
+  notifications    Notification[]
+  documents        Document[]
+  activityLogs     ActivityLog[]
+  auditLogs        AuditLog[]
+  waitlist         Waitlist[]
+  workers          Worker[]
+  workerExpenses   WorkerExpense[]
+  subscription     Subscription?
+  settings         Settings?
+  studentFeedbacks StudentFeedback[]
+  libraryFeedbacks LibraryFeedback[]
 
   @@map("libraries")
 }
@@ -330,9 +334,9 @@ model Student {
   institution          String?
   // ─── Seat & Shift ─────────────────────────────────────────────────────
   seatId               String?       @db.ObjectId
-  shiftId              String?       @db.ObjectId           // Primary shift ID
-  shiftType            ShiftType?                           // FULL_DAY / CUSTOM / etc.
-  shiftIds             String[]      @db.ObjectId           // All assigned shift IDs (for multi-shift)
+  shiftId              String?       @db.ObjectId // Primary shift ID
+  shiftType            ShiftType? // FULL_DAY / CUSTOM / etc.
+  shiftIds             String[]      @db.ObjectId // All assigned shift IDs (for multi-shift)
   // ─── Dates ────────────────────────────────────────────────────────────
   joiningDate          DateTime      @default(now())
   expiryDate           DateTime?
@@ -360,40 +364,41 @@ model Student {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  user          User?         @relation(fields: [userId], references: [id])
-  library       Library       @relation(fields: [libraryId], references: [id])
-  seat          Seat?         @relation(fields: [seatId], references: [id])
-  shift         Shift?        @relation(fields: [shiftId], references: [id])
-  payments      Payment[]
-  invoices      Invoice[]
-  attendance    Attendance[]
-  documents     Document[]
-  notifications Notification[]
-  waitlist      Waitlist[]
-  activityLogs  ActivityLog[]
+  user             User?             @relation(fields: [userId], references: [id])
+  library          Library           @relation(fields: [libraryId], references: [id])
+  seat             Seat?             @relation(fields: [seatId], references: [id])
+  shift            Shift?            @relation(fields: [shiftId], references: [id])
+  payments         Payment[]
+  invoices         Invoice[]
+  attendance       Attendance[]
+  documents        Document[]
+  notifications    Notification[]
+  waitlist         Waitlist[]
+  activityLogs     ActivityLog[]
+  studentFeedbacks StudentFeedback[]
 
   @@map("students")
 }
 
 model Seat {
-  id          String     @id @default(auto()) @map("_id") @db.ObjectId
-  seatNumber  String
-  floor       Int        @default(1)
-  row         String?
-  column      Int?
-  libraryId   String     @db.ObjectId
-  shiftId     String?    @db.ObjectId
-  status      SeatStatus @default(AVAILABLE)
-  seatType    SeatType   @default(STANDARD)
-  notes       String?
-  amenities   String[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id         String     @id @default(auto()) @map("_id") @db.ObjectId
+  seatNumber String
+  floor      Int        @default(1)
+  row        String?
+  column     Int?
+  libraryId  String     @db.ObjectId
+  shiftId    String?    @db.ObjectId
+  status     SeatStatus @default(AVAILABLE)
+  seatType   SeatType   @default(STANDARD)
+  notes      String?
+  amenities  String[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
-  library   Library    @relation(fields: [libraryId], references: [id])
-  shift     Shift?     @relation(fields: [shiftId], references: [id])
-  students  Student[]
-  waitlist  Waitlist[]
+  library  Library    @relation(fields: [libraryId], references: [id])
+  shift    Shift?     @relation(fields: [shiftId], references: [id])
+  students Student[]
+  waitlist Waitlist[]
 
   @@unique([seatNumber, libraryId, shiftId])
   @@map("seats")
@@ -413,7 +418,7 @@ model Shift {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  library    Library    @relation(fields: [libraryId], references: [id])
+  library    Library      @relation(fields: [libraryId], references: [id])
   students   Student[]
   seats      Seat[]
   attendance Attendance[]
@@ -498,9 +503,9 @@ model Attendance {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  student Student  @relation(fields: [studentId], references: [id])
-  library Library  @relation(fields: [libraryId], references: [id])
-  shift   Shift?   @relation(fields: [shiftId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+  library Library @relation(fields: [libraryId], references: [id])
+  shift   Shift?  @relation(fields: [shiftId], references: [id])
 
   @@unique([studentId, date, shiftId])
   @@map("attendance")
@@ -604,9 +609,9 @@ model Waitlist {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
-  student Student  @relation(fields: [studentId], references: [id])
-  library Library  @relation(fields: [libraryId], references: [id])
-  seat    Seat?    @relation(fields: [seatId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+  library Library @relation(fields: [libraryId], references: [id])
+  seat    Seat?   @relation(fields: [seatId], references: [id])
 
   @@map("waitlist")
 }
@@ -666,4 +671,69 @@ model Settings {
   library Library @relation(fields: [libraryId], references: [id])
 
   @@map("settings")
+}
+
+model Worker {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  phone     String
+  email     String?
+  libraryId String     @db.ObjectId
+  shiftIds  String[]   @db.ObjectId
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  library  Library         @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  expenses WorkerExpense[]
+
+  @@map("workers")
+}
+
+model WorkerExpense {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  workerId    String    @db.ObjectId
+  libraryId   String    @db.ObjectId
+  amount      Float
+  description String
+  imageUrl    String?
+  date        DateTime  @default(now())
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  worker  Worker  @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  library Library @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@map("worker_expenses")
+}
+
+model StudentFeedback {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId String   @db.ObjectId
+  libraryId String   @db.ObjectId
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  library Library @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@map("student_feedback")
+}
+
+model LibraryFeedback {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  libraryId         String   @db.ObjectId
+  featuresToImprove String[]
+  message           String?
+  isRead            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  library Library @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@map("library_feedback")
 }

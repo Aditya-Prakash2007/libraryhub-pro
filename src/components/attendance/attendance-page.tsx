@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import {
   CalendarCheck, QrCode, UserCheck, UserX, Clock,
-  ChevronLeft, ChevronRight, RefreshCw,
+  ChevronLeft, ChevronRight, RefreshCw, Download,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,8 +18,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { getAttendance, markAttendance } from "@/actions/attendance";
 import { getShifts } from "@/actions/shifts";
-import { getStudents } from "@/actions/students";
-import { formatDate, formatDateTime, getInitials } from "@/lib/utils";
+import { formatDate, getInitials } from "@/lib/utils";
 import { QRScannerDialog } from "./qr-scanner-dialog";
 import { ManualAttendanceDialog } from "./manual-attendance-dialog";
 
@@ -37,7 +38,11 @@ interface Shift {
   name: string;
 }
 
-export function AttendancePage() {
+interface AttendancePageProps {
+  libraryId: string;
+}
+
+export function AttendancePage({ libraryId }: AttendancePageProps) {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -45,6 +50,27 @@ export function AttendancePage() {
   const [shiftFilter, setShiftFilter] = useState("all");
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [appUrl, setAppUrl] = useState("");
+
+  useEffect(() => {
+    setAppUrl(window.location.origin);
+  }, []);
+
+  const scanUrl = appUrl ? `${appUrl}/scan?libraryId=${libraryId}` : "";
+
+  // Generate library QR code
+  useEffect(() => {
+    if (!libraryId || !scanUrl) return;
+    QRCode.toDataURL(scanUrl, {
+      width: 300,
+      margin: 2,
+      color: { dark: "#1e1b4b", light: "#ffffff" },
+      errorCorrectionLevel: "H",
+    }).then(setQrDataUrl).catch(console.error);
+  }, [libraryId, scanUrl]);
 
   const stats = {
     present: records.filter((r) => r.status === "PRESENT").length,
@@ -55,10 +81,7 @@ export function AttendancePage() {
 
   const loadAttendance = useCallback(async () => {
     setLoading(true);
-    const result = await getAttendance({
-      date: selectedDate,
-      shiftId: shiftFilter,
-    });
+    const result = await getAttendance({ date: selectedDate, shiftId: shiftFilter });
     if ("error" in result) {
       toast.error(result.error);
     } else {
@@ -77,6 +100,14 @@ export function AttendancePage() {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + days);
     setSelectedDate(d.toISOString().split("T")[0]);
+  };
+
+  const handleDownloadQR = () => {
+    if (!qrDataUrl) return;
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = `library-attendance-qr.png`;
+    a.click();
   };
 
   const statusColor = (status: string) => {
@@ -101,6 +132,69 @@ export function AttendancePage() {
           Mark Manual
         </Button>
       </PageHeader>
+
+      {/* Library QR Code Section */}
+      {qrDataUrl && (
+        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 to-violet-500/5 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <QrCode className="w-4 h-4 text-indigo-500" />
+              Library Attendance QR Code
+              <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30 ml-auto">
+                Active
+              </Badge>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Display or print this QR code in your library. Students scan it from their logged-in device to mark attendance.
+            </p>
+          </CardHeader>
+          <CardContent className="pb-5">
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+              {/* QR Code */}
+              <div className="shrink-0 p-4 bg-white rounded-2xl shadow-md ring-1 ring-indigo-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qrDataUrl} alt="Library Attendance QR" width={180} height={180} className="block" />
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 space-y-4 text-center sm:text-left">
+                <div>
+                  <p className="text-sm font-semibold text-foreground mb-1">How it works</p>
+                  <ol className="text-xs text-muted-foreground space-y-1.5 list-none">
+                    <li className="flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full bg-indigo-500/15 text-indigo-500 flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">1</span>
+                      Student logs into their account on their phone
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full bg-indigo-500/15 text-indigo-500 flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">2</span>
+                      Scans this QR code with phone camera → <strong>Check-In</strong> recorded with device time
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full bg-violet-500/15 text-violet-500 flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">3</span>
+                      Scans again when leaving → <strong>Check-Out</strong> recorded automatically
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                  <Button size="sm" onClick={handleDownloadQR} className="gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white">
+                    <Download className="w-3.5 h-3.5" />
+                    Download QR
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1.5">
+                    <Printer className="w-3.5 h-3.5" />
+                    Print
+                  </Button>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground break-all font-mono bg-muted/40 p-2 rounded">
+                  {scanUrl}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Date navigation + stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -202,11 +296,20 @@ export function AttendancePage() {
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor(record.status)}`}>
                       {record.status}
                     </span>
-                    {record.checkInTime && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        In: {new Date(record.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    )}
+                    <div className="flex flex-col text-xs text-muted-foreground mt-0.5 items-end gap-0.5">
+                      {record.checkInTime && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5 text-emerald-500" />
+                          In: {new Date(record.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                      {record.checkOutTime && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5 text-rose-400" />
+                          Out: {new Date(record.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -214,6 +317,8 @@ export function AttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      <canvas ref={canvasRef} className="hidden" />
 
       <QRScannerDialog
         open={qrScannerOpen}

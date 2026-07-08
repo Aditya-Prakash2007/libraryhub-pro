@@ -160,3 +160,26 @@ export async function deleteLibraryAccount(password: string) {
 
   return { success: true };
 }
+
+export async function getLibraryQrCode() {
+  const session = await auth();
+  if (!session?.user?.libraryId) return { error: "Unauthorized" };
+  const library = await prisma.library.findUnique({
+    where: { id: session.user.libraryId },
+    select: { customQrCode: true },
+  });
+  return { customQrCode: library?.customQrCode };
+}
+
+export async function updateLibraryQrCode(qrCodeBase64: string | null) {
+  const session = await auth();
+  if (!session?.user?.libraryId) return { error: "Unauthorized" };
+
+  await prisma.library.update({
+    where: { id: session.user.libraryId },
+    data: { customQrCode: qrCodeBase64 },
+  });
+
+  revalidatePath("/admin/payments");
+  return { success: true };
+}

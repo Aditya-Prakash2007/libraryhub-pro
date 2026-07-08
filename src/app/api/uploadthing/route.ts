@@ -1,6 +1,7 @@
-import { createRouteHandler } from "uploadthing/next";
-import { uploadRouter } from "@/lib/uploadthing";
-
-export const { GET, POST } = createRouteHandler({
-  router: uploadRouter,
-});
+// Removed in favor of Cloudinary direct upload
+export async function GET() {
+  return new Response(JSON.stringify({ status: "disabled" }), { status: 404 });
+}
+export async function POST() {
+  return new Response(JSON.stringify({ status: "disabled" }), { status: 404 });
+}

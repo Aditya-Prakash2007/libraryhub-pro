@@ -306,3 +306,29 @@ export async function bulkDeleteSeats(floor?: number) {
     return { error: "Failed to delete seats" };
   }
 }
+
+export async function toggleSeatMaintenance(seatNumber: string, floor: number, enableMaintenance: boolean) {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const status = enableMaintenance ? "MAINTENANCE" : "AVAILABLE";
+
+    await prisma.seat.updateMany({
+      where: {
+        libraryId,
+        seatNumber,
+        floor,
+      },
+      data: {
+        status,
+      },
+    });
+
+    revalidatePath("/admin/seats");
+    return { success: true };
+  } catch (error) {
+    console.error("Toggle seat maintenance error:", error);
+    return { error: "Failed to update seat status" };
+  }
+}

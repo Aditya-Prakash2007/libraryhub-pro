@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/shared/page-header";
-import { getSeats, vacateSeat, updateSeat, deleteSeat } from "@/actions/seats";
+import { getSeats, vacateSeat, updateSeat, deleteSeat, toggleSeatMaintenance } from "@/actions/seats";
 import { getShifts } from "@/actions/shifts";
 import { SEAT_STATUS_COLORS } from "@/constants";
 import { cn } from "@/lib/utils";
@@ -280,14 +280,15 @@ export function SeatsPage() {
 
                   const isAvailableInAnyShift = seatRecords.some(isRecordAvailable);
                   const isOccupiedInAnyShift = seatRecords.some(r => r.status === "OCCUPIED" || (r.students && r.students.length > 0));
+                  const allMaintenance = seatRecords.every(r => r.status === "MAINTENANCE");
 
                   let effectiveStatus = "AVAILABLE";
-                  if (hasFullDayStudent || !isAvailableInAnyShift) {
+                  if (allMaintenance) {
+                    effectiveStatus = "MAINTENANCE";
+                  } else if (hasFullDayStudent || !isAvailableInAnyShift) {
                     effectiveStatus = "OCCUPIED"; // Full Occupied
                   } else if (isOccupiedInAnyShift) {
                     effectiveStatus = "PARTIAL_OCCUPIED"; // Partial Occupied
-                  } else if (seatRecords.some(r => r.status === "MAINTENANCE")) {
-                    effectiveStatus = "MAINTENANCE";
                   } else if (seatRecords.some(r => r.status === "RESERVED")) {
                     effectiveStatus = "RESERVED";
                   }
@@ -360,7 +361,7 @@ export function SeatsPage() {
                                       <div className="text-xs space-y-1 p-1 max-w-[200px]">
                                         <p className="font-semibold text-sm">Seat {seat.seatNumber}</p>
                                         <p className={cn("font-medium", colors.text)}>
-                                          {seat.effectiveStatus === "OCCUPIED" ? "Full Occupied" : seat.effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : seat.effectiveStatus}
+                                          {seat.effectiveStatus === "OCCUPIED" ? "Full Occupied" : seat.effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : seat.effectiveStatus === "MAINTENANCE" ? "Seat Maintenance" : seat.effectiveStatus}
                                         </p>
                                         <p className="text-muted-foreground">Floor {seat.floor}</p>
                                         {isPartial && seat.occupiedShifts.length > 0 && (
@@ -416,7 +417,7 @@ export function SeatsPage() {
                       "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
                       colors.bg, colors.text
                     )}>
-                      {effectiveStatus === "OCCUPIED" ? "Full Occupied" : effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : effectiveStatus}
+                      {effectiveStatus === "OCCUPIED" ? "Full Occupied" : effectiveStatus === "PARTIAL_OCCUPIED" ? "Partial Occupied" : effectiveStatus === "MAINTENANCE" ? "Seat Maintenance" : effectiveStatus}
                     </span>
                   </div>
                   <div>
@@ -483,17 +484,44 @@ export function SeatsPage() {
                       <UserMinus className="w-4 h-4 mr-1" />Vacate All Shifts
                     </Button>
                   ) : (
-                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={async () => {
-                      if (!confirm(`Are you sure you want to delete seat ${selectedSeat.seatNumber}? This will delete all its shift configurations.`)) return;
-                      for (const r of selectedSeat.seatRecords) {
-                        await deleteSeat(r.id);
-                      }
-                      toast.success("Seat deleted");
-                      setSeatInfoOpen(false);
-                      loadSeats();
-                    }}>
-                      <Trash2 className="w-4 h-4 mr-1" />Delete Seat
-                    </Button>
+                    <>
+                      {effectiveStatus === "MAINTENANCE" ? (
+                        <Button variant="outline" size="sm" className="text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/10" onClick={async () => {
+                          const res = await toggleSeatMaintenance(selectedSeat.seatNumber, selectedSeat.floor, false);
+                          if ("error" in res) toast.error(res.error);
+                          else {
+                            toast.success("Seat restored to available status");
+                            setSeatInfoOpen(false);
+                            loadSeats();
+                          }
+                        }}>
+                          <Wrench className="w-4 h-4 mr-1" />Restore Seat
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" className="text-slate-400 border-slate-500/20 hover:bg-slate-500/10" onClick={async () => {
+                          const res = await toggleSeatMaintenance(selectedSeat.seatNumber, selectedSeat.floor, true);
+                          if ("error" in res) toast.error(res.error);
+                          else {
+                            toast.success("Seat is now under maintenance");
+                            setSeatInfoOpen(false);
+                            loadSeats();
+                          }
+                        }}>
+                          <Wrench className="w-4 h-4 mr-1" />Put Under Maintenance
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={async () => {
+                        if (!confirm(`Are you sure you want to delete seat ${selectedSeat.seatNumber}? This will delete all its shift configurations.`)) return;
+                        for (const r of selectedSeat.seatRecords) {
+                          await deleteSeat(r.id);
+                        }
+                        toast.success("Seat deleted");
+                        setSeatInfoOpen(false);
+                        loadSeats();
+                      }}>
+                        <Trash2 className="w-4 h-4 mr-1" />Delete Seat
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>

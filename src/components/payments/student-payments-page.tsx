@@ -237,15 +237,15 @@ export function StudentPaymentsPage({ payments, student }: StudentPaymentsPagePr
                       <div className="w-48 h-48 flex items-center justify-center">
                         <QrCode className="w-10 h-10 text-muted-foreground animate-pulse" />
                       </div>
+                    ) : student?.library?.customQrCode ? (
+                      <div className="text-center space-y-2">
+                        <img src={student.library.customQrCode} alt="Custom Payment QR" className="max-w-[200px] max-h-[200px] object-contain mx-auto rounded-lg" />
+                        <p className="text-[10px] text-muted-foreground font-medium">Scan to pay library (Custom QR)</p>
+                      </div>
                     ) : upiQrUrl && student?.library?.upiId ? (
                       <div className="text-center space-y-2">
                         <img src={upiQrUrl} alt="UPI Payment QR" className="w-48 h-48 mx-auto" />
                         <p className="text-[10px] text-muted-foreground font-mono">Dynamic QR for ₹{upiAmount}</p>
-                      </div>
-                    ) : student?.library?.customQrCode ? (
-                      <div className="text-center space-y-2">
-                        <img src={student.library.customQrCode} alt="Custom Payment QR" className="w-48 h-48 object-contain mx-auto" />
-                        <p className="text-[10px] text-muted-foreground">Scan to pay library</p>
                       </div>
                     ) : null}
                   </div>

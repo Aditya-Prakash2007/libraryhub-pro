@@ -173,3 +173,23 @@ export const notificationSchema = z.object({
 });
 
 export type NotificationFormData = z.infer<typeof notificationSchema>;
+
+// ==================== WORKER SCHEMAS ====================
+
+export const workerSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  phone: z.string().min(10, "Invalid phone number"),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  shiftIds: z.array(z.string()).min(1, "Select at least one shift"),
+});
+
+export type WorkerFormData = z.infer<typeof workerSchema>;
+
+export const workerExpenseSchema = z.object({
+  workerId: z.string().min(1, "Worker selection is required"),
+  amount: z.number().min(1, "Amount must be at least 1"),
+  description: z.string().min(3, "Description must be at least 3 characters"),
+  imageUrl: z.string().optional().or(z.literal("")),
+});
+
+export type WorkerExpenseFormData = z.infer<typeof workerExpenseSchema>;

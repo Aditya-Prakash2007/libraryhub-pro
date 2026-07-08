@@ -99,6 +99,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           role: user.role as string,
           status: user.status as string,
           libraryId: user.library?.id ?? user.student?.libraryId ?? null,
+          libraryName: user.library?.name ?? null,
           studentId: user.student?.id ?? null,
         };
       },
@@ -111,6 +112,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = (user as { role: string }).role;
         token.status = (user as { status: string }).status;
         token.libraryId = (user as { libraryId: string | null }).libraryId;
+        token.libraryName = (user as unknown as { libraryName: string | null }).libraryName;
         token.studentId = (user as { studentId: string | null }).studentId;
       }
       if (trigger === "update" && session) {
@@ -124,6 +126,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.role = token.role as string;
         session.user.status = token.status as string;
         session.user.libraryId = token.libraryId as string | null;
+        (session.user as any).libraryName = token.libraryName as string | null;
         session.user.studentId = token.studentId as string | null;
       }
       return session;

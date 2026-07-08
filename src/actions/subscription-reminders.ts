@@ -6,7 +6,11 @@ import {
   sendTrialExpiryEmail,
 } from "@/services/brevo";
 
-// Run this daily via cron (e.g. Vercel cron job)
+// Run this daily via cron (e.g. Vercel cron job at 8 AM IST → 2:30 AM UTC)
+// vercel.json: { "crons": [{ "path": "/api/cron/reminders", "schedule": "30 2 * * *" }] }
+
+// ─── Library Subscription Reminders (SaaS platform level) ─────────────────────
+
 export async function sendSubscriptionReminders() {
   const now = new Date();
   let emailsSent = 0;
@@ -119,65 +123,170 @@ export async function sendSubscriptionReminders() {
   return { emailsSent, expiredTrials: expiredTrials.length, expiredSubs: expiredSubs.length };
 }
 
-// Send fee reminders to students
+// ─── Student Fee Reminders (7, 3, 1 days before due date) ─────────────────────
+//
+// Logic:
+//   1. Check students whose nextDueDate falls exactly 7, 3, or 1 day from today
+//   2. Also check new students: joiningDate + 30 days falls in that window (if no nextDueDate)
+//   3. Respect per-library WhatsApp notification settings
+//   4. Send email always (if email available)
+//   5. Send WhatsApp template message (if phone available + library has WA enabled)
+
 export async function sendStudentFeeReminders() {
   const { sendFeeReminderEmail } = await import("@/services/brevo");
   const { sendFeeReminderWhatsApp } = await import("@/services/whatsapp");
+
   const now = new Date();
   let sent = 0;
+  let whatsappSent = 0;
+  let emailSent = 0;
 
-  // Students with fees due in 7, 3, 1 days or overdue
-  const checkDays = [7, 3, 1, 0, -1]; // negative = overdue
+  // Only send reminders at 7, 3, 1 days before due date
+  // (removed 0 = same day and -1 = overdue from WhatsApp to avoid spam)
+  const reminderDays = [7, 3, 1];
 
-  for (const daysAhead of checkDays) {
+  for (const daysAhead of reminderDays) {
+    // Build the date window for this reminder slot
     const targetDate = new Date(now);
     targetDate.setDate(targetDate.getDate() + daysAhead);
 
-    const students = await prisma.student.findMany({
+    const dayStart = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate(),
+      0, 0, 0, 0
+    );
+    const dayEnd = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate(),
+      23, 59, 59, 999
+    );
+
+    // ── Query 1: Students with nextDueDate in this window ─────────────────
+    const studentsWithDueDate = await prisma.student.findMany({
       where: {
         status: "ACTIVE",
-        nextDueDate: {
-          gte: new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()),
-          lt: new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1),
-        },
-        userId: { not: null },
+        paymentStatus: { notIn: ["PAID"] },      // Skip already-paid students
+        nextDueDate: { gte: dayStart, lte: dayEnd },
       },
       include: {
-        user: { select: { email: true } },
-        library: { select: { name: true } },
+        library: {
+          select: {
+            name: true,
+            settings: {
+              select: {
+                whatsappNotifications: true,
+                emailNotifications: true,
+              },
+            },
+          },
+        },
       },
     });
 
+    // ── Query 2: New students (no nextDueDate) — joiningDate + 30 days ───
+    // joiningDate + 30 days = first fee due → check if it falls in window
+    const studentsNewNoPayment = await prisma.student.findMany({
+      where: {
+        status: "ACTIVE",
+        nextDueDate: null,                        // No payment recorded yet
+        lastPaymentDate: null,                   // Never paid
+        joiningDate: {
+          // joiningDate + 30 days = target → joiningDate = target - 30 days
+          gte: new Date(dayStart.getTime() - 30 * 24 * 60 * 60 * 1000),
+          lte: new Date(dayEnd.getTime() - 30 * 24 * 60 * 60 * 1000),
+        },
+      },
+      include: {
+        library: {
+          select: {
+            name: true,
+            settings: {
+              select: {
+                whatsappNotifications: true,
+                emailNotifications: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Merge & deduplicate by student ID
+    const allStudentsMap = new Map(
+      [...studentsWithDueDate, ...studentsNewNoPayment].map((s) => [s.id, s])
+    );
+    const students = Array.from(allStudentsMap.values());
+
     for (const student of students) {
-      if (!student.user?.email) continue;
+      // Calculate the actual due date string to show in message
+      let dueDateObj: Date;
+      if (student.nextDueDate) {
+        dueDateObj = student.nextDueDate;
+      } else {
+        // joiningDate + 30 days
+        dueDateObj = new Date(student.joiningDate);
+        dueDateObj.setDate(dueDateObj.getDate() + 30);
+      }
 
-      const dueDateStr = student.nextDueDate
-        ? student.nextDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long" })
-        : "Soon";
+      const dueDateStr = dueDateObj.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
 
-      await sendFeeReminderEmail(
-        student.user.email,
-        student.fullName,
-        student.library.name,
-        daysAhead,
-        student.monthlyFee,
-        dueDateStr
-      ).catch(() => {});
+      const feeAmount = Math.max(
+        0,
+        (student.monthlyFee || 0) - (student.discountAmount || 0)
+      );
 
-      if (student.phone) {
-        await sendFeeReminderWhatsApp(
+      const libraryName = student.library?.name || "Library";
+      const waEnabled = student.library?.settings?.whatsappNotifications ?? false;
+      const emailEnabled = student.library?.settings?.emailNotifications ?? true;
+
+      // ── Send Email ────────────────────────────────────────────────────
+      if (emailEnabled && student.email) {
+        await sendFeeReminderEmail(
+          student.email,
+          student.fullName,
+          libraryName,
+          daysAhead,
+          feeAmount,
+          dueDateStr
+        ).catch((err) => {
+          console.error(`[FeeReminder] Email failed for ${student.id}:`, err);
+        });
+        emailSent++;
+      }
+
+      // ── Send WhatsApp (only if library has WA notifications enabled) ─
+      if (waEnabled && student.phone) {
+        const result = await sendFeeReminderWhatsApp(
           student.phone,
           student.fullName,
-          student.library.name,
+          libraryName,
           daysAhead,
-          student.monthlyFee,
+          feeAmount,
           dueDateStr
-        ).catch(() => {});
+        ).catch((err) => {
+          console.error(`[FeeReminder] WhatsApp failed for ${student.id}:`, err);
+          return { success: false };
+        });
+
+        if (result.success) {
+          whatsappSent++;
+        }
       }
 
       sent++;
     }
   }
 
-  return { sent };
+  console.log(
+    `[FeeReminder] Done — ${sent} students processed, ` +
+    `${emailSent} emails sent, ${whatsappSent} WhatsApp messages sent`
+  );
+
+  return { sent, emailSent, whatsappSent };
 }

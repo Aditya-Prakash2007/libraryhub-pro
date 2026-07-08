@@ -50,7 +50,7 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
     attendancePercentage?: number; totalPresent?: number; totalAbsent?: number;
     currentStreak?: number; seat?: { seatNumber?: string; floor?: number }; shift?: { name?: string; startTime?: string; endTime?: string };
     payments?: { id: string; paymentId: string; amount: number; status: string; paymentType: string; paidAt?: string }[];
-    attendance?: { id: string; date: string; status: string; checkInTime?: string }[];
+    attendance?: { id: string; date: string; status: string; checkInTime?: string; checkOutTime?: string }[];
     fatherName?: string; address?: string; city?: string; state?: string; depositAmount?: number;
   } | null;
 
@@ -186,24 +186,60 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                 </TabsContent>
 
                 <TabsContent value="attendance" className="mt-4">
-                  <div className="grid grid-cols-7 gap-1">
-                    {s.attendance && s.attendance.slice(0, 28).map((a) => (
-                      <div
-                        key={a.id}
-                        title={`${formatDate(a.date)} - ${a.status}`}
-                        className={`aspect-square rounded-sm text-[10px] flex items-center justify-center font-medium ${
-                          a.status === "PRESENT" ? "bg-emerald-500/20 text-emerald-400" :
-                          a.status === "ABSENT" ? "bg-rose-500/20 text-rose-400" :
-                          "bg-amber-500/20 text-amber-400"
-                        }`}
-                      >
-                        {new Date(a.date).getDate()}
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {Array.from({ length: 7 }).map((_, i) => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - i);
+                      // Use local timezone formatting for YYYY-MM-DD
+                      const dateStr = d.toLocaleDateString("en-CA"); // e.g. "2026-07-08"
+                      
+                      const record = s.attendance?.find((a: any) => {
+                        const aDate = new Date(a.date).toLocaleDateString("en-CA");
+                        return aDate === dateStr;
+                      });
+
+                      const isToday = i === 0;
+
+                      return (
+                        <div key={dateStr} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg border border-border/50 bg-muted/20">
+                          <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">
+                                {isToday ? "Today" : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{dateStr}</span>
+                            </div>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              record?.status === "PRESENT" ? "bg-emerald-500/15 text-emerald-500" :
+                              record?.status === "ABSENT" ? "bg-rose-500/15 text-rose-500" :
+                              record?.status ? "bg-amber-500/15 text-amber-500" :
+                              "bg-slate-500/15 text-slate-500"
+                            }`}>
+                              {record?.status || "NO RECORD"}
+                            </span>
+                          </div>
+                          <div className="flex gap-4 text-xs">
+                            <div className="flex flex-col">
+                              <span className="text-muted-foreground">Check-In</span>
+                              <span className="font-medium">
+                                {record?.checkInTime 
+                                  ? new Date(record.checkInTime).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: true }) 
+                                  : "--:--"}
+                              </span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-muted-foreground">Check-Out</span>
+                              <span className="font-medium">
+                                {record?.checkOutTime 
+                                  ? new Date(record.checkOutTime).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: true }) 
+                                  : "--:--"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {(!s.attendance || s.attendance.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8 text-sm">No attendance records</p>
-                  )}
                 </TabsContent>
               </Tabs>
             </div>

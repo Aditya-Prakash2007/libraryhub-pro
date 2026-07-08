@@ -21,11 +21,18 @@ export default async function StudentAttendancePageRoute() {
       })
     : null;
 
+  // Only last 7 days
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
   const attendance = session.user.studentId
     ? await prisma.attendance.findMany({
-        where: { studentId: session.user.studentId },
+        where: {
+          studentId: session.user.studentId,
+          date: { gte: sevenDaysAgo },
+        },
         orderBy: { date: "desc" },
-        take: 90,
         include: { shift: { select: { name: true } } },
       })
     : [];
