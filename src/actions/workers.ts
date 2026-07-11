@@ -94,10 +94,23 @@ export async function updateWorker(id: string, data: Partial<WorkerFormData>) {
   }
 }
 
-export async function deleteWorker(id: string) {
+export async function deleteWorker(id: string, otp: string) {
   try {
-    const libraryId = await getAdminLibraryId();
-    if (!libraryId) return { error: "Unauthorized" };
+    const session = await auth();
+    if (!session?.user?.id || !session?.user?.libraryId) return { error: "Unauthorized" };
+
+    const adminId = session.user.id;
+    const libraryId = session.user.libraryId;
+
+    // Verify Admin OTP
+    const adminUser = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { otp: true, otpExpiry: true },
+    });
+
+    if (!adminUser || !adminUser.otp || !adminUser.otpExpiry || adminUser.otp !== otp || adminUser.otpExpiry < new Date()) {
+      return { error: "Invalid or expired OTP" };
+    }
 
     // Verify worker belongs to library
     const worker = await prisma.worker.findFirst({
@@ -116,11 +129,61 @@ export async function deleteWorker(id: string) {
       where: { id },
     });
 
+    // Clear OTP on successful delete
+    await prisma.user.update({
+      where: { id: adminId },
+      data: { otp: null, otpExpiry: null },
+    });
+
     revalidatePath("/admin/workers");
     return { success: true };
   } catch (error) {
     console.error("Delete worker error:", error);
-    return { error: "Failed to delete worker" };
+    return { error: "Failed to delete team member" };
+  }
+}
+
+// Request OTP for deleting worker
+export async function requestDeleteWorkerOTP(workerId: string) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id || !session?.user?.libraryId || !session?.user?.email) {
+      return { error: "Unauthorized" };
+    }
+
+    const adminId = session.user.id;
+    const adminEmail = session.user.email;
+    const adminName = session.user.name || "Library Owner";
+    const libraryId = session.user.libraryId;
+
+    // Verify worker belongs to library
+    const worker = await prisma.worker.findFirst({
+      where: { id: workerId, libraryId },
+    });
+
+    if (!worker) return { error: "Worker not found" };
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    // Save OTP to Admin's User record
+    await prisma.user.update({
+      where: { id: adminId },
+      data: {
+        otp,
+        otpExpiry: expiry,
+      },
+    });
+
+    // Send email using Brevo
+    const { sendDeleteWorkerOTPEmail } = await import("@/services/brevo");
+    await sendDeleteWorkerOTPEmail(adminEmail, adminName, worker.name, otp);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Request delete worker OTP error:", error);
+    return { error: "Failed to send OTP email" };
   }
 }
 

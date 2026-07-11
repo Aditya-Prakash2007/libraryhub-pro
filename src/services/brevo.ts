@@ -147,6 +147,32 @@ export async function sendPasswordResetOTP(to: string, name: string, otp: string
   });
 }
 
+// ─── Delete Worker OTP ──────────────────────────────────────────────────────
+export async function sendDeleteWorkerOTPEmail(
+  to: string,
+  name: string,
+  workerName: string,
+  otp: string
+) {
+  const html = emailWrapper(`
+    <h2 style="color:#ef4444;margin:0 0 8px;font-size:22px;font-weight:700;">Verify Staff Deletion</h2>
+    <p style="color:#6b7280;font-size:15px;line-height:1.7;margin:0 0 24px;">Hi <strong>${name}</strong>,</p>
+    <p style="color:#6b7280;font-size:15px;line-height:1.7;margin:0 0 24px;">You have requested to delete staff member <strong>${workerName}</strong>. Please use the verification OTP below to authorize this deletion. This OTP expires in <strong>10 minutes</strong>.</p>
+    <div style="background:#fef2f2;border:2px dashed #f87171;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
+      <p style="color:#ef4444;font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Verification OTP</p>
+      <p style="color:#ef4444;font-size:42px;font-weight:800;margin:0;letter-spacing:12px;">${otp}</p>
+    </div>
+    <p style="color:#9ca3af;font-size:13px;text-align:center;">If you did not request this deletion, please ignore this email and change your account credentials immediately.</p>
+  `, "#ef4444");
+
+  return sendBrevoEmail({
+    to,
+    toName: name,
+    subject: `Confirm Deletion of ${workerName} — LibraryHub Pro`,
+    html,
+  });
+}
+
 // ─── Fee Reminder ──────────────────────────────────────────────────────────
 export async function sendFeeReminderEmail(
   to: string,

@@ -99,6 +99,7 @@ export const ADMIN_NAV_ITEMS = [
   { title: "Reports", href: "/admin/reports", icon: "BarChart3" },
   { title: "Notifications", href: "/admin/notifications", icon: "Bell" },
   { title: "Team Members", href: "/admin/workers", icon: "Briefcase" },
+  { title: "Expenses", href: "/admin/expenses", icon: "Receipt" },
   { title: "Upgrade Plan", href: "/admin/subscription", icon: "Zap" },
   { title: "Settings", href: "/admin/settings", icon: "Settings" },
   { title: "Feedback", href: "/admin/feedback", icon: "MessageSquare" },

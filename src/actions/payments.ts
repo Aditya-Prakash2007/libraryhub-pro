@@ -522,3 +522,132 @@ export async function getRevenueAnalytics(period: "week" | "month" | "year" = "m
     return { error: "Failed to fetch analytics" };
   }
 }
+
+// Get combined financial reports (Income vs Expense)
+export async function getFinancialReportsData(period: "week" | "month" | "year" = "month") {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    let startDate: Date;
+    let groupBy: "day" | "month";
+
+    if (period === "week") {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      startDate.setHours(0, 0, 0, 0);
+      groupBy = "day";
+    } else if (period === "month") {
+      startDate = startOfMonth;
+      groupBy = "day";
+    } else {
+      startDate = new Date(now.getFullYear(), 0, 1);
+      groupBy = "month";
+    }
+
+    // Query PAID payments
+    const payments = await prisma.payment.findMany({
+      where: {
+        libraryId,
+        status: "PAID",
+        paidAt: { gte: startDate },
+      },
+      select: {
+        totalAmount: true,
+        paidAt: true,
+      },
+    });
+
+    // Query expenses
+    const expenses = await prisma.workerExpense.findMany({
+      where: {
+        libraryId,
+        date: { gte: startDate },
+      },
+      select: {
+        amount: true,
+        date: true,
+      },
+    });
+
+    // Calculate totals
+    const todayIncome = payments
+      .filter((p) => p.paidAt && new Date(p.paidAt) >= today)
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+
+    const todayExpense = expenses
+      .filter((e) => new Date(e.date) >= today)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const monthIncome = payments
+      .filter((p) => p.paidAt && new Date(p.paidAt) >= startOfMonth)
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+
+    const monthExpense = expenses
+      .filter((e) => new Date(e.date) >= startOfMonth)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Group both by date
+    const groupedData: Record<string, { income: number; expense: number }> = {};
+
+    // Helper to format date keys
+    const getDateKey = (date: Date) => {
+      if (groupBy === "day") {
+        return date.toISOString().split("T")[0];
+      } else {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      }
+    };
+
+    // Initialize all dates in period to 0
+    const temp = new Date(startDate);
+    while (temp <= now) {
+      const key = getDateKey(temp);
+      groupedData[key] = { income: 0, expense: 0 };
+      if (groupBy === "day") {
+        temp.setDate(temp.getDate() + 1);
+      } else {
+        temp.setMonth(temp.getMonth() + 1);
+      }
+    }
+
+    // Populate payments
+    payments.forEach((p) => {
+      if (!p.paidAt) return;
+      const key = getDateKey(p.paidAt);
+      if (!groupedData[key]) {
+        groupedData[key] = { income: 0, expense: 0 };
+      }
+      groupedData[key].income += p.totalAmount;
+    });
+
+    // Populate expenses
+    expenses.forEach((e) => {
+      const key = getDateKey(e.date);
+      if (!groupedData[key]) {
+        groupedData[key] = { income: 0, expense: 0 };
+      }
+      groupedData[key].expense += e.amount;
+    });
+
+    const chartData = Object.entries(groupedData).map(([date, val]) => ({
+      date,
+      income: val.income,
+      expense: val.expense,
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      todayIncome,
+      todayExpense,
+      monthIncome,
+      monthExpense,
+      chartData,
+    };
+  } catch (error) {
+    console.error("Get financial reports error:", error);
+    return { error: "Failed to fetch financial reports" };
+  }
+}

@@ -48,6 +48,7 @@ interface StudentDetailPageProps {
     discountAmount: number;
     joiningDate: Date;
     expiryDate?: Date | null;
+    nextDueDate?: Date | null;
     attendancePercentage: number;
     totalPresent: number;
     totalAbsent: number;
@@ -178,7 +179,9 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
                 <h2 className="text-xl font-bold">{s.fullName}</h2>
                 <Badge variant={s.status === "ACTIVE" ? "default" : "destructive"} className="text-xs">{s.status}</Badge>
                 <Badge variant="outline" className={`text-xs ${s.paymentStatus === "PAID" ? "text-emerald-500 border-emerald-500/30" : "text-amber-500 border-amber-500/30"}`}>
-                  {s.paymentStatus}
+                  {s.paymentStatus === "PAID"
+                    ? `Paid until ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`
+                    : `Pending since ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`}
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
@@ -252,6 +255,7 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
                 {[
                   ["Joining Date", formatDate(s.joiningDate)],
                   ["Expiry Date", s.expiryDate ? formatDate(s.expiryDate) : "N/A"],
+                  ["Fee Paid Until", s.nextDueDate ? formatDate(s.nextDueDate) : "N/A"],
                   ["Monthly Fee", formatCurrency(s.monthlyFee)],
                   ["Discount", formatCurrency(s.discountAmount)],
                   ["Net Monthly", formatCurrency(s.monthlyFee - s.discountAmount)],

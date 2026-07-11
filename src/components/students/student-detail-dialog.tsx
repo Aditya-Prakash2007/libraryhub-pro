@@ -51,7 +51,7 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
     currentStreak?: number; seat?: { seatNumber?: string; floor?: number }; shift?: { name?: string; startTime?: string; endTime?: string };
     payments?: { id: string; paymentId: string; amount: number; status: string; paymentType: string; paidAt?: string }[];
     attendance?: { id: string; date: string; status: string; checkInTime?: string; checkOutTime?: string }[];
-    fatherName?: string; address?: string; city?: string; state?: string; depositAmount?: number;
+    fatherName?: string; address?: string; city?: string; state?: string; depositAmount?: number; nextDueDate?: string | Date | null;
   } | null;
 
   return (
@@ -95,7 +95,9 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       s.paymentStatus === "PAID" ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"
                     }`}>
-                      {s.paymentStatus}
+                      {s.paymentStatus === "PAID"
+                        ? `Paid until ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`
+                        : `Pending since ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`}
                     </span>
                   </div>
                   <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
@@ -150,9 +152,10 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                       { label: "Father's Name", value: s.fatherName },
                       { label: "Joining Date", value: s.joiningDate ? formatDate(s.joiningDate) : "—" },
                       { label: "Expiry Date", value: s.expiryDate ? formatDate(s.expiryDate) : "—" },
+                      { label: "Fee Paid Until", value: s.nextDueDate ? formatDate(s.nextDueDate) : "—" },
                       { label: "Address", value: s.city ? `${s.city}, ${s.state}` : s.address },
                     ].map((item) => item.value && (
-                      <div key={item.label}>
+                      <div key={item.label} className="space-y-0.5">
                         <p className="text-xs text-muted-foreground">{item.label}</p>
                         <p className="font-medium">{item.value}</p>
                       </div>

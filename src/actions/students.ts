@@ -304,6 +304,20 @@ export async function createStudent(data: StudentFormData) {
       library.name
     ).catch(() => {});
 
+    // Send immediate fee reminder if the registration date is backdated
+    // and next due date is within 7 days or overdue
+    if (student.nextDueDate && student.paymentStatus !== "PAID") {
+      const now = new Date();
+      const diffTime = student.nextDueDate.getTime() - now.getTime();
+      const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 7) {
+        const { sendSingleFeeReminder } = await import("@/actions/fees");
+        await sendSingleFeeReminder(student.id).catch((err) => {
+          console.error("Instant fee reminder failed on student registration:", err);
+        });
+      }
+    }
+
     revalidatePath("/admin/students");
     return { success: true, student };
   } catch (error) {
@@ -436,6 +450,31 @@ export async function deleteStudent(id: string) {
     if (!student) return { error: "Student not found" };
 
     await prisma.$transaction(async (tx) => {
+      // 1. Delete associated invoices
+      await tx.invoice.deleteMany({ where: { studentId: id } });
+
+      // 2. Delete payments
+      await tx.payment.deleteMany({ where: { studentId: id } });
+
+      // 3. Delete attendance
+      await tx.attendance.deleteMany({ where: { studentId: id } });
+
+      // 4. Delete documents
+      await tx.document.deleteMany({ where: { studentId: id } });
+
+      // 5. Delete notifications
+      await tx.notification.deleteMany({ where: { studentId: id } });
+
+      // 6. Delete waitlist entries
+      await tx.waitlist.deleteMany({ where: { studentId: id } });
+
+      // 7. Delete activity logs
+      await tx.activityLog.deleteMany({ where: { studentId: id } });
+
+      // 8. Delete student feedbacks
+      await tx.studentFeedback.deleteMany({ where: { studentId: id } });
+
+      // 9. Update seat status if occupied
       if (student.seatId) {
         const otherActive = await tx.student.count({
           where: {
@@ -448,7 +487,14 @@ export async function deleteStudent(id: string) {
           await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
         }
       }
+
+      // 10. Delete the student
       await tx.student.delete({ where: { id } });
+
+      // 11. Delete associated User if any
+      if (student.userId) {
+        await tx.user.delete({ where: { id: student.userId } });
+      }
     });
 
     revalidatePath("/admin/students");

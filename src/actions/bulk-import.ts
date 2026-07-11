@@ -53,7 +53,7 @@ export async function bulkImportStudents(rows: Partial<StudentFormData>[]) {
         currentCount++;
         const studentId = generateStudentId(library.slug, currentCount);
 
-        await prisma.student.create({
+        const createdStudent = await prisma.student.create({
           data: {
             studentId,
             libraryId,
@@ -78,8 +78,25 @@ export async function bulkImportStudents(rows: Partial<StudentFormData>[]) {
             expiryDate: row.expiryDate ? new Date(row.expiryDate) : null,
             status: "ACTIVE",
             paymentStatus: "PENDING",
+            nextDueDate: row.joiningDate
+              ? (() => { const d = new Date(row.joiningDate); d.setMonth(d.getMonth() + 1); return d; })()
+              : (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })(),
           },
         });
+
+        // Send immediate fee reminder if the registration date is backdated
+        // and next due date is within 7 days or overdue
+        if (createdStudent.nextDueDate && createdStudent.paymentStatus !== "PAID") {
+          const now = new Date();
+          const diffTime = createdStudent.nextDueDate.getTime() - now.getTime();
+          const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (daysLeft <= 7) {
+            const { sendSingleFeeReminder } = await import("@/actions/fees");
+            await sendSingleFeeReminder(createdStudent.id).catch((err) => {
+              console.error("Instant fee reminder failed on student bulk import:", err);
+            });
+          }
+        }
 
         // Track so in-loop duplicates are caught too
         existingEmails.add(row.email.toLowerCase());

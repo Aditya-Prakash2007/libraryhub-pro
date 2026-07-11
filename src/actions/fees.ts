@@ -151,7 +151,17 @@ export async function sendSingleFeeReminder(studentId: string) {
       where: { id: studentId, libraryId },
       include: {
         user: { select: { email: true } },
-        library: { select: { name: true } },
+        library: {
+          select: {
+            name: true,
+            settings: {
+              select: {
+                whatsappNotifications: true,
+                emailNotifications: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -174,7 +184,10 @@ export async function sendSingleFeeReminder(studentId: string) {
     let emailSent = false;
     let whatsappSent = false;
 
-    if (student.user?.email) {
+    const emailEnabled = student.library.settings?.emailNotifications ?? true;
+    const waEnabled = student.library.settings?.whatsappNotifications ?? false;
+
+    if (emailEnabled && student.user?.email) {
       await sendFeeReminderEmail(
         student.user.email,
         student.fullName,
@@ -185,7 +198,7 @@ export async function sendSingleFeeReminder(studentId: string) {
       ).then(() => { emailSent = true; }).catch((e) => console.error("Email reminder error:", e));
     }
 
-    if (student.phone) {
+    if (waEnabled && student.phone) {
       await sendFeeReminderWhatsApp(
         student.phone,
         student.fullName,

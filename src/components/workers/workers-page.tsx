@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Search, Edit2, Trash2, Link2, Copy, Check, Info, TrendingUp } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Info, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,9 +56,7 @@ export function WorkersPage() {
     id?: string; name?: string; phone?: string; email?: string; shiftIds?: string[];
   } | null>(null);
   
-  // Copy state
-  const [copied, setCopied] = useState(false);
-  const [origin, setOrigin] = useState("https://libraryhub-pro.vercel.app");
+
 
   // Expense stats state
   const [stats, setStats] = useState<{ spentToday: number; spentThisMonth: number } | null>(null);
@@ -67,11 +65,7 @@ export function WorkersPage() {
 
   const libraryId = session?.user?.libraryId;
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
-  }, []);
+
 
   const fetchWorkersList = async () => {
     setLoading(true);
@@ -118,27 +112,59 @@ export function WorkersPage() {
     fetchExpenseStats();
   }, []);
 
-  const handleCopyLink = () => {
-    if (!libraryId) return;
-    const url = `${origin}/expense-tracker/${libraryId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    toast.success("Expense Tracker link copied!");
-    setTimeout(() => setCopied(false), 2000);
+
+
+  const [deleteOtpOpen, setDeleteOtpOpen] = useState(false);
+  const [otpValue, setOtpValue] = useState("");
+  const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
+  const [deletingWorkerName, setDeletingWorkerName] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+
+  const handleRequestOTP = async (id: string, name: string) => {
+    setOtpLoading(true);
+    setDeletingWorkerId(id);
+    setDeletingWorkerName(name);
+    try {
+      const { requestDeleteWorkerOTP } = await import("@/actions/workers");
+      const res = await requestDeleteWorkerOTP(id);
+      if (res.error) {
+        toast.error(res.error);
+      } else {
+        toast.success("Verification OTP sent to your email!");
+        setDeleteOtpOpen(true);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to send verification OTP");
+    } finally {
+      setOtpLoading(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleVerifyDelete = async () => {
+    if (!deletingWorkerId) return;
+    if (!otpValue || otpValue.length !== 6) {
+      toast.error("Please enter a valid 6-digit OTP");
+      return;
+    }
+    setOtpLoading(true);
     try {
-      const res = await deleteWorker(id);
+      const res = await deleteWorker(deletingWorkerId, otpValue);
       if (res.error) {
         toast.error(res.error);
       } else {
         toast.success("Team member deleted successfully");
+        setDeleteOtpOpen(false);
+        setOtpValue("");
+        setDeletingWorkerId(null);
+        setDeletingWorkerName("");
         handleDataRefresh();
       }
     } catch (err) {
       console.error(err);
       toast.error("Failed to delete team member");
+    } finally {
+      setOtpLoading(false);
     }
   };
 
@@ -167,41 +193,7 @@ export function WorkersPage() {
         </Button>
       </div>
 
-      {/* Copy Link Widget */}
-      {libraryId && (
-        <Card className="border-border/60 bg-gradient-to-r from-indigo-500/5 to-violet-500/5 overflow-hidden relative">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-indigo-400" />
-              Public Expense Tracker Link for Team Members
-            </CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              Share this unique link with your team members. They can visit this page on their phone or computer to log receipts, repair costs, and daily expenses.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 bg-background border border-border/80 rounded-lg px-3 py-2 text-xs flex items-center font-mono text-muted-foreground select-all overflow-x-auto truncate">
-              {`${origin}/expense-tracker/${libraryId}`}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyLink}
-              className="border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 h-10 px-4 flex items-center justify-center shrink-0"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" /> Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 mr-2" /> Copy Link
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+
 
       {/* Worker Expenses Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -447,57 +439,101 @@ export function WorkersPage() {
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="w-8 h-8 text-muted-foreground hover:text-destructive"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-card border-border">
-                              <AlertDialogHeader>
-                                <AlertDialogTitle className="text-lg font-semibold text-destructive">
-                                  Delete Team Member?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription className="text-sm text-muted-foreground">
-                                  Are you sure you want to delete team member <strong className="text-foreground">{worker.name}</strong>? This action will permanently remove their profile and all their recorded expenses. This cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-accent hover:bg-accent/80 text-foreground">
-                                  Cancel
-                                </AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive hover:bg-destructive/80 text-white font-semibold"
-                                  onClick={() => handleDelete(worker.id)}
-                                >
-                                  Delete Permanently
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                           <AlertDialog>
+                             <AlertDialogTrigger asChild>
+                               <Button
+                                 variant="ghost"
+                                 size="icon"
+                                 className="w-8 h-8 text-muted-foreground hover:text-destructive"
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </Button>
+                             </AlertDialogTrigger>
+                             <AlertDialogContent className="bg-card border-border">
+                               <AlertDialogHeader>
+                                 <AlertDialogTitle className="text-lg font-semibold text-destructive">
+                                   Delete Team Member?
+                                 </AlertDialogTitle>
+                                 <AlertDialogDescription className="text-sm text-muted-foreground">
+                                   Are you sure you want to delete team member <strong className="text-foreground">{worker.name}</strong>? An OTP will be sent to the library owner's email to authorize this deletion. This cannot be undone.
+                                 </AlertDialogDescription>
+                               </AlertDialogHeader>
+                               <AlertDialogFooter>
+                                 <AlertDialogCancel className="bg-accent hover:bg-accent/80 text-foreground">
+                                   Cancel
+                                 </AlertDialogCancel>
+                                 <AlertDialogAction
+                                   className="bg-destructive hover:bg-destructive/80 text-white font-semibold"
+                                   onClick={() => handleRequestOTP(worker.id, worker.name)}
+                                 >
+                                   Request Delete OTP
+                                 </AlertDialogAction>
+                               </AlertDialogFooter>
+                             </AlertDialogContent>
+                           </AlertDialog>
+                         </div>
+                       </TableCell>
+                     </TableRow>
+                   ))}
+                 </TableBody>
+               </Table>
+             </div>
+           )}
+         </CardContent>
+       </Card>
+ 
+       {/* Dialog for Add/Edit worker */}
+       <WorkerDialog
+         open={dialogOpen}
+         onOpenChange={setDialogOpen}
+         worker={selectedWorker}
+         onSuccess={handleDataRefresh}
+       />
 
-      {/* Dialog for Add/Edit worker */}
-      <WorkerDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        worker={selectedWorker}
-        onSuccess={handleDataRefresh}
-      />
-    </div>
-  );
-}
+       {/* Dialog for Worker deletion OTP Verification */}
+       <AlertDialog open={deleteOtpOpen} onOpenChange={setDeleteOtpOpen}>
+         <AlertDialogContent className="bg-card border-border max-w-md">
+           <AlertDialogHeader>
+             <AlertDialogTitle className="text-lg font-semibold text-destructive flex items-center gap-2">
+               Verify Staff Deletion
+             </AlertDialogTitle>
+             <AlertDialogDescription className="text-sm text-muted-foreground mt-2">
+               Enter the 6-digit OTP sent to your library owner email address to delete <strong className="text-foreground">{deletingWorkerName}</strong>.
+             </AlertDialogDescription>
+           </AlertDialogHeader>
+           <div className="py-4">
+             <Input
+               type="text"
+               maxLength={6}
+               placeholder="Enter 6-Digit OTP"
+               value={otpValue}
+               onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+               className="text-center font-bold tracking-widest text-lg h-12 bg-background border-border"
+             />
+           </div>
+           <AlertDialogFooter>
+             <AlertDialogCancel 
+               onClick={() => {
+                 setDeleteOtpOpen(false);
+                 setOtpValue("");
+                 setDeletingWorkerId(null);
+                 setDeletingWorkerName("");
+               }}
+               className="bg-accent hover:bg-accent/80 text-foreground"
+             >
+               Cancel
+             </AlertDialogCancel>
+             <Button
+               loading={otpLoading}
+               onClick={handleVerifyDelete}
+               className="bg-destructive hover:bg-destructive/80 text-white font-semibold"
+             >
+               Verify & Delete
+             </Button>
+           </AlertDialogFooter>
+         </AlertDialogContent>
+       </AlertDialog>
+     </div>
+   );
+ }
 

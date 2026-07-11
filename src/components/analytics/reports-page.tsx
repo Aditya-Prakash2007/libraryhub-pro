@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
 import { Download, FileText, BarChart3, TrendingUp, Users, Grid3X3 } from "lucide-react";
-import { getRevenueAnalytics } from "@/actions/payments";
+import { getRevenueAnalytics, getFinancialReportsData } from "@/actions/payments";
 import { getDashboardStats } from "@/actions/students";
 import { formatCurrency } from "@/lib/utils";
 
@@ -23,6 +23,13 @@ export function ReportsPage() {
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
   const [revenueData, setRevenueData] = useState<{ date: string; revenue: number }[]>([]);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
+  const [financials, setFinancials] = useState<{
+    todayIncome: number;
+    todayExpense: number;
+    monthIncome: number;
+    monthExpense: number;
+    chartData: { date: string; income: number; expense: number }[];
+  } | null>(null);
 
   useEffect(() => {
     getRevenueAnalytics(period).then((r) => {
@@ -30,6 +37,9 @@ export function ReportsPage() {
     });
     getDashboardStats().then((r) => {
       if (!("error" in r)) setStats(r as unknown as Record<string, number>);
+    });
+    getFinancialReportsData(period).then((r) => {
+      if (!("error" in r)) setFinancials(r as any);
     });
   }, [period]);
 
@@ -85,19 +95,45 @@ export function ReportsPage() {
         ))}
       </div>
 
-      {/* Revenue chart */}
+      {/* Financial Overview Cards */}
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold tracking-tight">Financial Overview</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: "Today's Income (Fees)", value: formatCurrency(financials?.todayIncome || 0), color: "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" },
+            { label: "Today's Expense", value: formatCurrency(financials?.todayExpense || 0), color: "text-rose-500 border-rose-500/10 bg-rose-500/5" },
+            { label: "This Month's Income (Fees)", value: formatCurrency(financials?.monthIncome || 0), color: "text-emerald-500 border-emerald-500/20 bg-emerald-500/10" },
+            { label: "This Month's Expense", value: formatCurrency(financials?.monthExpense || 0), color: "text-rose-500 border-rose-500/20 bg-rose-500/10" },
+          ].map((item, i) => (
+            <motion.div key={item.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.05 }}>
+              <Card className={`p-5 border ${item.color.split(" ")[1]} ${item.color.split(" ")[2]}`}>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
+                  <p className={`text-xl font-bold mt-1 ${item.color.split(" ")[0]}`}>{item.value}</p>
+                </div>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      {/* Income vs Expense chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Revenue Trend</CardTitle>
-          <CardDescription>Daily revenue for the selected period</CardDescription>
+          <CardTitle>Income vs Expense Trend</CardTitle>
+          <CardDescription>Visual comparison of fee collections and expenses</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={revenueData}>
+            <AreaChart data={financials?.chartData || []}>
               <defs>
-                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -107,8 +143,13 @@ export function ReportsPage() {
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(v) => {
-                  const d = new Date(v);
-                  return `${d.getDate()}/${d.getMonth() + 1}`;
+                  try {
+                    const d = new Date(v);
+                    if (isNaN(d.getTime())) return v;
+                    return `${d.getDate()}/${d.getMonth() + 1}`;
+                  } catch {
+                    return v;
+                  }
                 }}
               />
               <YAxis
@@ -124,12 +165,14 @@ export function ReportsPage() {
                   borderRadius: "8px",
                   fontSize: "12px",
                 }}
-                formatter={(v: unknown) => [
+                formatter={(v: any, name: any) => [
                   formatCurrency(typeof v === "number" ? v : 0),
-                  "Revenue",
+                  name === "income" ? "Income (Fees)" : "Expense",
                 ]}
               />
-              <Area type="monotone" dataKey="revenue" stroke="#6366f1" strokeWidth={2} fill="url(#revGrad)" />
+              <Legend verticalAlign="top" height={36} />
+              <Area type="monotone" name="income" dataKey="income" stroke="#10b981" strokeWidth={2} fill="url(#incGrad)" />
+              <Area type="monotone" name="expense" dataKey="expense" stroke="#f43f5e" strokeWidth={2} fill="url(#expGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
