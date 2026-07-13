@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/shared/page-header";
 import { formatDate, formatCurrency, getInitials } from "@/lib/utils";
+import { PaymentCalendar } from "@/components/students/payment-calendar";
 
 interface StudentProfileProps {
   student: {
@@ -36,6 +37,8 @@ interface StudentProfileProps {
     monthlyFee: number;
     joiningDate: Date;
     expiryDate?: Date | null;
+    nextDueDate?: Date | null;
+    totalDueAmount?: number;
     attendancePercentage: number;
     totalPresent: number;
     totalAbsent: number;
@@ -135,6 +138,18 @@ export function StudentProfilePage({ student: s }: StudentProfileProps) {
           </motion.div>
         ))}
       </div>
+
+      {/* Payment Calendar */}
+      <Card>
+        <CardContent className="p-6">
+          <PaymentCalendar 
+            joiningDate={s.joiningDate} 
+            nextDueDate={s.nextDueDate} 
+            totalDueAmount={s.totalDueAmount || 0} 
+            monthlyFee={s.monthlyFee} 
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Personal info */}

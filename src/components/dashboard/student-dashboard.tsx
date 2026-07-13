@@ -16,7 +16,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { formatDate, formatCurrency, getInitials, daysUntilExpiry } from "@/lib/utils";
-import { generateQRCode, getStudentQRData } from "@/lib/qrcode";
 import Link from "next/link";
 
 interface StudentProps {
@@ -49,9 +48,6 @@ interface StudentProps {
 }
 
 export function StudentDashboard({ student }: StudentProps) {
-  const [qrData, setQrData] = useState<string | null>(null);
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
 
   const s = student;
 
@@ -59,21 +55,6 @@ export function StudentDashboard({ student }: StudentProps) {
   const isExpiringSoon = daysLeft !== null && daysLeft <= 7 && daysLeft > 0;
   const isExpired = daysLeft !== null && daysLeft <= 0;
   const effectiveFee = s ? Math.max(0, s.monthlyFee - (s.discountAmount || 0)) : 0;
-
-  const handleShowQR = async () => {
-    if (!s) return;
-    setGenerating(true);
-    try {
-      const data = getStudentQRData(s.id, s.libraryId);
-      const qr = await generateQRCode(data);
-      setQrData(qr);
-      setQrDialogOpen(true);
-    } catch {
-      console.error("QR generation failed");
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   if (!s) {
     return (
@@ -145,16 +126,6 @@ export function StudentDashboard({ student }: StudentProps) {
               )}
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-            onClick={handleShowQR}
-            disabled={generating}
-          >
-            <QrCode className="w-4 h-4 mr-1" />
-            {generating ? "Generating..." : "My QR"}
-          </Button>
         </div>
         <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/5 rounded-full" />
       </motion.div>
@@ -317,34 +288,6 @@ export function StudentDashboard({ student }: StudentProps) {
           </CardContent>
         </Card>
       </div>
-
-      {/* QR Code Dialog */}
-      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>My Digital ID Card</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Card */}
-            <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white text-center">
-              <Avatar className="w-16 h-16 mx-auto mb-3 border-2 border-white/30">
-                <AvatarImage src={s.profilePhoto || ""} />
-                <AvatarFallback className="bg-white/20 text-white text-xl">{getInitials(s.fullName)}</AvatarFallback>
-              </Avatar>
-              <h2 className="font-bold text-lg">{s.fullName}</h2>
-              <p className="text-indigo-200 text-sm">{s.studentId}</p>
-              {s.seat && <p className="text-indigo-100 text-xs mt-1">Seat {s.seat.seatNumber} · {s.shift?.name}</p>}
-              {qrData && (
-                <div className="mt-4 bg-white rounded-xl p-3 mx-auto w-fit">
-                  <img src={qrData} alt="QR Code" className="w-40 h-40" />
-                </div>
-              )}
-              <p className="text-indigo-200 text-xs mt-3">Scan for attendance</p>
-            </div>
-            <Button className="w-full" variant="outline" onClick={() => setQrDialogOpen(false)}>Close</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

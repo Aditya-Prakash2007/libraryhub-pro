@@ -17,6 +17,7 @@ import { attendanceSchema } from "@/schemas";
 import { markAttendance } from "@/actions/attendance";
 import { getStudents } from "@/actions/students";
 import type { AttendanceFormData } from "@/schemas";
+import { SearchableStudentSelect } from "@/components/ui/searchable-student-select";
 
 interface ManualAttendanceDialogProps {
   open: boolean;
@@ -66,25 +67,19 @@ export function ManualAttendanceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Mark Attendance</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
             <Label>Student *</Label>
-            <Select onValueChange={(v) => setValue("studentId", v)}>
-              <SelectTrigger className={errors.studentId ? "border-destructive" : ""}>
-                <SelectValue placeholder="Select student" />
-              </SelectTrigger>
-              <SelectContent>
-                {students.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.fullName} — {s.studentId}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableStudentSelect
+              students={students}
+              onValueChange={(v) => setValue("studentId", v)}
+              error={!!errors.studentId}
+            />
+            {errors.studentId && <p className="text-xs text-destructive">{errors.studentId.message}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

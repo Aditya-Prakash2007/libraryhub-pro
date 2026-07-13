@@ -126,9 +126,20 @@ export async function verifyPayment(data: {
     const invoiceNumber = generateUniqueInvoiceNumber();
 
     const now = new Date();
-    // Calculate next due date (1 month from now)
-    const nextDue = new Date(now);
-    nextDue.setMonth(nextDue.getMonth() + 1);
+    
+    // Determine payment duration
+    let monthsToAdd = 1;
+    if (payment.paymentType === "QUARTERLY") monthsToAdd = 3;
+    else if (payment.paymentType === "HALF_YEARLY") monthsToAdd = 6;
+    else if (payment.paymentType === "YEARLY") monthsToAdd = 12;
+
+    // Base nextDueDate on joiningDate or previous nextDueDate
+    const baseDate = payment.student?.nextDueDate && payment.student.nextDueDate > payment.student.joiningDate
+      ? new Date(payment.student.nextDueDate)
+      : payment.student?.joiningDate ? new Date(payment.student.joiningDate) : new Date();
+
+    const nextDue = new Date(baseDate);
+    nextDue.setMonth(nextDue.getMonth() + monthsToAdd);
 
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       await tx.payment.update({
@@ -234,21 +245,34 @@ export async function recordManualPayment(data: {
     // Get student's monthly fee to determine if payment is partial
     const student = await prisma.student.findUnique({
       where: { id: data.studentId },
-      select: { monthlyFee: true, discountAmount: true },
+      select: { monthlyFee: true, discountAmount: true, joiningDate: true, nextDueDate: true, totalDueAmount: true },
     });
 
-    const expectedFee = student
+    let monthsToAdd = 1;
+    if (data.paymentType === "QUARTERLY") monthsToAdd = 3;
+    else if (data.paymentType === "HALF_YEARLY") monthsToAdd = 6;
+    else if (data.paymentType === "YEARLY") monthsToAdd = 12;
+
+    const baseFee = student
       ? Math.max(0, (student.monthlyFee || 0) - (student.discountAmount || 0))
       : data.amount;
+      
+    const expectedFee = (baseFee * monthsToAdd) + (student?.totalDueAmount || 0);
 
-    // Determine payment status: PARTIAL if paid less than expected, PAID if full
+    // Determine payment status: PARTIAL if paid less than expected, PAID if full or overpaid
     const isPartial = data.amount < expectedFee;
-    const balanceDue = isPartial ? expectedFee - data.amount : 0;
+    const balanceDue = expectedFee - data.amount; // Will be negative if overpaid
     const paymentStatus = isPartial ? "PARTIAL" : "PAID";
 
     const now = new Date();
-    const nextDue = new Date(now);
-    nextDue.setMonth(nextDue.getMonth() + 1);
+    
+    // Base nextDueDate on joiningDate or previous nextDueDate
+    const baseDate = student?.nextDueDate && student.nextDueDate > student.joiningDate
+      ? new Date(student.nextDueDate)
+      : student?.joiningDate ? new Date(student.joiningDate) : new Date();
+
+    const nextDue = new Date(baseDate);
+    nextDue.setMonth(nextDue.getMonth() + monthsToAdd);
 
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       const payment = await tx.payment.create({
@@ -266,8 +290,8 @@ export async function recordManualPayment(data: {
             : data.description,
           periodStart: data.periodStart ? new Date(data.periodStart) : undefined,
           periodEnd: data.periodEnd ? new Date(data.periodEnd) : undefined,
-          notes: isPartial
-            ? `Partial payment. Balance due: ₹${balanceDue}. ${data.notes || ""}`
+          notes: balanceDue !== 0
+            ? `${balanceDue > 0 ? 'Partial payment' : 'Overpayment'}. Balance: ₹${balanceDue}. ${data.notes || ""}`
             : data.notes,
           totalAmount: data.amount,
           lateFee: balanceDue,
@@ -312,7 +336,7 @@ export async function recordManualPayment(data: {
           } : {
             nextDueDate: nextDue,
             pendingMonths: 0,
-            totalDueAmount: 0,
+            totalDueAmount: balanceDue < 0 ? balanceDue : 0, // Store negative balance as credit
           }),
         },
       });

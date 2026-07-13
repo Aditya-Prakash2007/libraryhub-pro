@@ -20,6 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import { formatDate, formatCurrency, getInitials, formatDateTime } from "@/lib/utils";
 import { deleteStudent, toggleStudentStatus } from "@/actions/students";
 import { sendSingleFeeReminder } from "@/actions/fees";
+import { PaymentCalendar } from "@/components/students/payment-calendar";
 
 
 interface StudentDetailPageProps {
@@ -49,6 +50,7 @@ interface StudentDetailPageProps {
     joiningDate: Date;
     expiryDate?: Date | null;
     nextDueDate?: Date | null;
+    totalDueAmount?: number;
     attendancePercentage: number;
     totalPresent: number;
     totalAbsent: number;
@@ -360,7 +362,18 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
         </TabsContent>
 
         {/* Payments tab */}
-        <TabsContent value="payments" className="mt-4">
+        <TabsContent value="payments" className="mt-4 space-y-4">
+          <Card>
+            <CardContent className="p-6">
+              <PaymentCalendar 
+                joiningDate={s.joiningDate} 
+                nextDueDate={s.nextDueDate} 
+                totalDueAmount={s.totalDueAmount || 0} 
+                monthlyFee={s.monthlyFee - s.discountAmount} 
+              />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="p-0">
               <div className="divide-y divide-border/50">

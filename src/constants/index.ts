@@ -108,7 +108,7 @@ export const ADMIN_NAV_ITEMS = [
 export const STUDENT_NAV_ITEMS = [
   { title: "Dashboard", href: "/student/dashboard", icon: "LayoutDashboard" },
   { title: "Profile", href: "/student/profile", icon: "User" },
-  { title: "My QR Card", href: "/student/qr-card", icon: "QrCode" },
+  { title: "Scan Attendance", href: "/student/scan", icon: "ScanLine" },
   { title: "Attendance", href: "/student/attendance", icon: "CalendarCheck" },
   { title: "Payments", href: "/student/payments", icon: "CreditCard" },
   { title: "Notifications", href: "/student/notifications", icon: "Bell" },

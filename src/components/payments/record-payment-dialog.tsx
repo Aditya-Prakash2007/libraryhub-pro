@@ -19,6 +19,7 @@ import { recordManualPayment } from "@/actions/payments";
 import { getStudents } from "@/actions/students";
 import { getWorkers } from "@/actions/workers";
 import type { PaymentFormData } from "@/schemas";
+import { SearchableStudentSelect } from "@/components/ui/searchable-student-select";
 
 interface RecordPaymentDialogProps {
   open: boolean;
@@ -31,7 +32,7 @@ export function RecordPaymentDialog({
   open, onOpenChange, onSuccess, preSelectedStudentId,
 }: RecordPaymentDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [students, setStudents] = useState<{ id: string; fullName: string; studentId: string; monthlyFee: number }[]>([]);
+  const [students, setStudents] = useState<{ id: string; fullName: string; studentId: string; monthlyFee: number; discountAmount: number; totalDueAmount: number }[]>([]);
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
 
@@ -45,7 +46,30 @@ export function RecordPaymentDialog({
   });
 
   const selectedStudentId = watch("studentId");
+  const selectedPaymentType = watch("paymentType");
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
+
+  const getMonthsMultiplier = (type: string) => {
+    switch (type) {
+      case "QUARTERLY": return 3;
+      case "HALF_YEARLY": return 6;
+      case "YEARLY": return 12;
+      default: return 1;
+    }
+  };
+
+  // Net fee after discount × duration multiplier
+  const netMonthlyFee = selectedStudent 
+    ? Math.max(0, selectedStudent.monthlyFee - (selectedStudent.discountAmount || 0))
+    : 0;
+
+  const expectedBaseAmount = selectedStudent 
+    ? netMonthlyFee * getMonthsMultiplier(selectedPaymentType || "MONTHLY")
+    : 0;
+
+  const expectedAmount = selectedStudent 
+    ? Math.max(0, expectedBaseAmount + (selectedStudent.totalDueAmount || 0))
+    : 0;
 
   useEffect(() => {
     if (open) {
@@ -56,6 +80,8 @@ export function RecordPaymentDialog({
             fullName: s.fullName as string,
             studentId: s.studentId as string,
             monthlyFee: s.monthlyFee as number,
+            discountAmount: (s.discountAmount as number) || 0,
+            totalDueAmount: (s.totalDueAmount as number) || 0,
           })));
         }
       });
@@ -71,10 +97,10 @@ export function RecordPaymentDialog({
   }, [open]);
 
   useEffect(() => {
-    if (selectedStudent && !watch("amount")) {
-      setValue("amount", selectedStudent.monthlyFee);
+    if (selectedStudent) {
+      setValue("amount", expectedAmount);
     }
-  }, [selectedStudent, setValue, watch]);
+  }, [selectedStudent, selectedPaymentType, expectedAmount, setValue]);
 
   const onSubmit = async (data: PaymentFormData) => {
     setLoading(true);
@@ -108,28 +134,20 @@ export function RecordPaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Record Payment</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
             <Label>Student *</Label>
-            <Select
+            <SearchableStudentSelect
+              students={students}
+              value={selectedStudentId}
               onValueChange={(v) => setValue("studentId", v)}
-              defaultValue={preSelectedStudentId}
-            >
-              <SelectTrigger className={errors.studentId ? "border-destructive" : ""}>
-                <SelectValue placeholder="Select student" />
-              </SelectTrigger>
-              <SelectContent>
-                {students.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.fullName} — {s.studentId}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              error={!!errors.studentId}
+            />
+            {errors.studentId && <p className="text-xs text-destructive">{errors.studentId.message}</p>}
           </div>
 
           {/* Team Member who collected */}
@@ -191,16 +209,35 @@ export function RecordPaymentDialog({
             <Input
               type="number"
               step="0.01"
-              placeholder={selectedStudent ? String(Math.max(0, selectedStudent.monthlyFee)) : "0"}
+              placeholder={String(expectedAmount)}
               {...register("amount", { valueAsNumber: true })}
               className={errors.amount ? "border-destructive" : ""}
             />
             {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
             {selectedStudent && (
-              <p className="text-xs text-muted-foreground">
-                Expected: ₹{Math.max(0, selectedStudent.monthlyFee).toLocaleString("en-IN")}/month
-                {" "}— partial amount will show as dues
-              </p>
+              <div className="text-xs text-muted-foreground space-y-0.5 mt-1">
+                <p>
+                  Monthly Fee: ₹{selectedStudent.monthlyFee.toLocaleString("en-IN")}
+                  {selectedStudent.discountAmount > 0 && (
+                    <span className="text-emerald-500 ml-1">— Discount: ₹{selectedStudent.discountAmount.toLocaleString("en-IN")}</span>
+                  )}
+                </p>
+                {selectedStudent.totalDueAmount !== 0 && (
+                  <p className="font-medium text-foreground">
+                    {selectedStudent.totalDueAmount > 0 
+                      ? <span className="text-orange-500">Dues (Previous): +₹{selectedStudent.totalDueAmount.toLocaleString("en-IN")}</span>
+                      : <span className="text-emerald-500">Credit (Overpaid): -₹{Math.abs(selectedStudent.totalDueAmount).toLocaleString("en-IN")}</span>
+                    }
+                  </p>
+                )}
+                <p className="font-semibold text-foreground text-sm mt-2">
+                  Total Payable: ₹{expectedAmount.toLocaleString("en-IN")}
+                  {getMonthsMultiplier(selectedPaymentType || "MONTHLY") > 1 && (
+                    <span className="text-muted-foreground font-normal text-xs"> (₹{netMonthlyFee.toLocaleString("en-IN")} × {getMonthsMultiplier(selectedPaymentType || "MONTHLY")} months)</span>
+                  )}
+                </p>
+                <p>Partial amount will be recorded as dues.</p>
+              </div>
             )}
           </div>
 
