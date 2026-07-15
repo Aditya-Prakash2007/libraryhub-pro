@@ -46,9 +46,9 @@ export function BulkSeatDialog({ open, onOpenChange, onSuccess, existingSeatCoun
       toast.error(result.error);
     } else {
       if (result.count === 0) {
-        toast.info(result.message ?? "All seats already exist. Nothing was added.");
-      } else if (result.skipped && result.skipped > 0) {
-        toast.success(result.message ?? `${result.count} seat(s) created, ${result.skipped} skipped.`);
+        toast.info(result.message);
+      } else if (result.skipped > 0) {
+        toast.success(result.message);
       } else {
         toast.success(`${result.count} seat(s) created successfully.`);
       }

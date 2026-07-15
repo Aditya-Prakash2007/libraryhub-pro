@@ -93,7 +93,10 @@ export async function bulkCreateSeats(
   endNum: number,
   floor: number,
   shiftId?: string
-) {
+): Promise<
+  | { error: string }
+  | { success: true; count: number; skipped: number; message: string }
+> {
   try {
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
