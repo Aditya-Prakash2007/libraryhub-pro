@@ -29,6 +29,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Global headers — camera blocked everywhere by default
         source: "/(.*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
@@ -37,6 +38,16 @@ const nextConfig: NextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
+          },
+        ],
+      },
+      {
+        // Allow camera only on the student scan page
+        source: "/student/scan",
+        headers: [
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(), geolocation=()",
           },
         ],
       },
