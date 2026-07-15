@@ -39,10 +39,16 @@ export function PaymentCalendar({ joiningDate, nextDueDate, totalDueAmount = 0, 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {monthsGrid.map((month, idx) => {
           let status = "UNPAID";
+          const isMonthBeforeNext = isSameMonth(addMonths(month, 1), next);
+          
           if (isBefore(month, next)) {
-            status = "PAID";
+            if (isMonthBeforeNext && totalDueAmount > 0) {
+              status = "PARTIAL";
+            } else {
+              status = "PAID";
+            }
           } else if (isSameMonth(month, next)) {
-            if (totalDueAmount > 0) {
+            if (!nextDueDate && totalDueAmount > 0) {
               status = "PARTIAL";
             } else if (totalDueAmount < 0) {
               status = "OVERPAID";

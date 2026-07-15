@@ -162,9 +162,13 @@ export function DueFeesDialog({ open, onOpenChange }: DueFeesDialogProps) {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         row.pendingMonths > 2
                           ? "bg-rose-500/15 text-rose-500"
+                          : row.pendingMonths === 0 
+                          ? "bg-blue-500/15 text-blue-400"
                           : "bg-amber-500/15 text-amber-500"
                       }`}>
-                        {row.pendingMonths} month{row.pendingMonths !== 1 ? "s" : ""}
+                        {row.pendingMonths === 0 
+                          ? "Partial Dues" 
+                          : `${row.pendingMonths} month${row.pendingMonths !== 1 ? "s" : ""}`}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-bold text-rose-500">

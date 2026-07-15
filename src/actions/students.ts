@@ -264,10 +264,7 @@ export async function createStudent(data: StudentFormData) {
           depositAmount: data.depositAmount || 0,
           discountAmount: data.discountAmount || 0,
           notes: data.notes || null,
-          // Auto-calculate next due date
-          nextDueDate: data.joiningDate
-            ? (() => { const d = new Date(data.joiningDate); d.setMonth(d.getMonth() + 1); return d; })()
-            : (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })(),
+          // nextDueDate is set only when a real payment is received, not on creation
         },
       });
 
@@ -319,6 +316,8 @@ export async function createStudent(data: StudentFormData) {
     }
 
     revalidatePath("/admin/students");
+    revalidatePath("/admin/payments");
+    revalidatePath("/admin/dashboard");
     return { success: true, student };
   } catch (error) {
     console.error("Create student error:", error);

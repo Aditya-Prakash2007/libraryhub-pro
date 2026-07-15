@@ -24,49 +24,60 @@ export async function syncDueFees() {
         monthlyFee: true,
         discountAmount: true,
         lastPaymentDate: true,
-        payments: {
-          where: { status: "PAID" },
-          orderBy: { paidAt: "desc" },
-          take: 1,
-          select: { paidAt: true },
-        },
+        nextDueDate: true,
+        paymentStatus: true,
+        totalDueAmount: true,
+        pendingMonths: true,
       },
     });
 
     const today = new Date();
     let updated = 0;
 
+    // One-time cleanup: students who have NEVER paid (lastPaymentDate=null) should
+    // NOT have a nextDueDate — it was incorrectly set by the old student-creation code.
+    // Clear it so the display shows "Not yet paid" correctly.
     for (const student of students) {
-      const lastPaidDate = student.lastPaymentDate
-        ?? student.payments[0]?.paidAt
-        ?? null;
+      if (!student.lastPaymentDate && student.nextDueDate) {
+        await prisma.student.update({
+          where: { id: student.id },
+          data: { nextDueDate: null },
+        });
+      }
+    }
 
-      const expectedFee = Math.max(0, student.monthlyFee - (student.discountAmount || 0));
+    for (const student of students) {
+      const baseFee = Math.max(0, student.monthlyFee - (student.discountAmount || 0));
 
       const fee = calculateDueFee(
         student.joiningDate,
-        expectedFee,
-        lastPaidDate,
+        baseFee,
+        student.nextDueDate,
         today
       );
 
-      // Only update if something changed
-      if (
-        fee.pendingMonths !== undefined &&
-        fee.totalDueAmount !== undefined
-      ) {
+      // Determine new paymentStatus:
+      let newStatus: string;
+      if (fee.pendingMonths > 0) {
+        newStatus = fee.pendingMonths > 1 ? "OVERDUE" : "PENDING";
+      } else if (student.paymentStatus === "PARTIAL") {
+        const partialExpiry = student.nextDueDate ? new Date(student.nextDueDate) : null;
+        if (partialExpiry && today >= partialExpiry) {
+          // Partial billing cycle ended → now the new cycle is pending
+          newStatus = "PENDING";
+        } else {
+          newStatus = "PARTIAL"; // still within the partially-paid month
+        }
+      } else {
+        newStatus = "PAID";
+      }
+
+      if (student.pendingMonths !== fee.pendingMonths || student.paymentStatus !== newStatus) {
         await prisma.student.update({
           where: { id: student.id },
           data: {
             pendingMonths: fee.pendingMonths,
-            totalDueAmount: fee.totalDueAmount,
-            nextDueDate: fee.nextDueDate,
-            paymentStatus:
-              fee.pendingMonths > 0
-                ? fee.pendingMonths > 1
-                  ? "OVERDUE"
-                  : "PENDING"
-                : "PAID",
+            paymentStatus: newStatus as any,
           },
         });
         updated++;
@@ -79,6 +90,79 @@ export async function syncDueFees() {
   } catch (error) {
     console.error("Sync due fees error:", error);
     return { error: "Failed to sync fee data" };
+  }
+}
+
+// Global Sync for CRON JOB - Updates all libraries
+export async function syncGlobalDueFees() {
+  try {
+    const students = await prisma.student.findMany({
+      where: { status: "ACTIVE" },
+      select: {
+        id: true,
+        joiningDate: true,
+        monthlyFee: true,
+        discountAmount: true,
+        lastPaymentDate: true,
+        nextDueDate: true,
+        paymentStatus: true,
+        totalDueAmount: true,
+        pendingMonths: true,
+      },
+    });
+
+    const today = new Date();
+    let updated = 0;
+
+    for (const student of students) {
+      if (!student.lastPaymentDate && student.nextDueDate) {
+        await prisma.student.update({
+          where: { id: student.id },
+          data: { nextDueDate: null },
+        });
+      }
+    }
+
+    for (const student of students) {
+      const baseFee = Math.max(0, student.monthlyFee - (student.discountAmount || 0));
+
+      const fee = calculateDueFee(
+        student.joiningDate,
+        baseFee,
+        student.nextDueDate,
+        today
+      );
+
+      let newStatus: string;
+      if (fee.pendingMonths > 0) {
+        newStatus = fee.pendingMonths > 1 ? "OVERDUE" : "PENDING";
+      } else if (student.paymentStatus === "PARTIAL") {
+        const partialExpiry = student.nextDueDate ? new Date(student.nextDueDate) : null;
+        if (partialExpiry && today >= partialExpiry) {
+          newStatus = "PENDING";
+        } else {
+          newStatus = "PARTIAL";
+        }
+      } else {
+        newStatus = "PAID";
+      }
+
+      if (student.pendingMonths !== fee.pendingMonths || student.paymentStatus !== newStatus) {
+        await prisma.student.update({
+          where: { id: student.id },
+          data: {
+            pendingMonths: fee.pendingMonths,
+            paymentStatus: newStatus as any,
+          },
+        });
+        updated++;
+      }
+    }
+
+    return { success: true, updated };
+  } catch (error) {
+    console.error("Global sync due fees error:", error);
+    return { error: "Failed to sync global fee data" };
   }
 }
 
@@ -98,7 +182,7 @@ export async function getDueFeesData(params?: {
       where: {
         libraryId,
         status: "ACTIVE",
-        paymentStatus: { in: ["PENDING", "OVERDUE"] },
+        paymentStatus: { in: ["PENDING", "OVERDUE", "PARTIAL"] },
         ...(search && {
           OR: [
             { fullName: { contains: search, mode: "insensitive" as const } },
@@ -120,7 +204,7 @@ export async function getDueFeesData(params?: {
       where: {
         libraryId,
         status: "ACTIVE",
-        paymentStatus: { in: ["PENDING", "OVERDUE"] },
+        paymentStatus: { in: ["PENDING", "OVERDUE", "PARTIAL"] },
       },
     });
 

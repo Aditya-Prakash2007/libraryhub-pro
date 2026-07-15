@@ -93,11 +93,20 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                       {s.status}
                     </span>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      s.paymentStatus === "PAID" ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"
+                      s.paymentStatus === "PAID" ? "bg-emerald-500/15 text-emerald-500"
+                      : s.paymentStatus === "PARTIAL" ? "bg-blue-500/15 text-blue-400"
+                      : (s.payments?.length ?? 0) === 0 ? "bg-muted text-muted-foreground"
+                      : "bg-amber-500/15 text-amber-500"
                     }`}>
-                      {s.paymentStatus === "PAID"
-                        ? `Paid until ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`
-                        : `Pending since ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`}
+                      {s.paymentStatus === "PAID" && s.nextDueDate
+                        ? `Paid until ${formatDate(s.nextDueDate)}`
+                      : s.paymentStatus === "PARTIAL" && s.nextDueDate
+                        ? `Partial — pending until ${formatDate(s.nextDueDate)}`
+                      : (s.payments?.length ?? 0) === 0
+                        ? "No payment yet"
+                      : s.nextDueDate
+                        ? `Due since ${formatDate(s.nextDueDate)}`
+                      : "Dues pending"}
                     </span>
                   </div>
                   <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
@@ -152,7 +161,13 @@ export function StudentDetailDialog({ studentId, open, onOpenChange }: StudentDe
                       { label: "Father's Name", value: s.fatherName },
                       { label: "Joining Date", value: s.joiningDate ? formatDate(s.joiningDate) : "—" },
                       { label: "Expiry Date", value: s.expiryDate ? formatDate(s.expiryDate) : "—" },
-                      { label: "Fee Paid Until", value: s.nextDueDate ? formatDate(s.nextDueDate) : "—" },
+                      { label: "Fee Paid Until", value: s.paymentStatus === "PAID" && s.nextDueDate
+                        ? formatDate(s.nextDueDate)
+                        : s.paymentStatus === "PARTIAL" && s.nextDueDate
+                        ? `${formatDate(s.nextDueDate)} (partial — dues pending)`
+                        : (s.payments?.length ?? 0) > 0 && s.nextDueDate
+                        ? `${formatDate(s.nextDueDate)} (overdue)`
+                        : "Not yet paid" },
                       { label: "Address", value: s.city ? `${s.city}, ${s.state}` : s.address },
                     ].map((item) => item.value && (
                       <div key={item.label} className="space-y-0.5">

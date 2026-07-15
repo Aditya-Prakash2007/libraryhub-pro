@@ -10,55 +10,84 @@ export interface FeeCalculation {
 }
 
 /**
- * Calculate how many months are due based on joining date and last payment date.
- * Fee cycle starts from the joining date (e.g. joined Jan 15 → due Feb 15 → Mar 15 etc.)
+ * Calculate how many billing cycles are overdue.
+ *
+ * Semantics of nextDueDateFromDB:
+ *   - null  → student has never paid; use joiningDate as "unpaid from" date.
+ *             First billing cycle runs from joiningDate. Pending = complete
+ *             months elapsed since joiningDate.
+ *   - set   → student is paid UP UNTIL this date. As soon as today >= this
+ *             date, the NEXT billing cycle has started → at least 1 month due.
+ *             pendingMonths = monthsElapsed(nextDueDate → today) + 1
+ *
+ * totalDueAmount passed here is monthlyFee (per month) — NOT the partial
+ * balance. The partial balance is tracked separately in the Student record.
  */
 export function calculateDueFee(
   joiningDate: Date,
   monthlyFee: number,
-  lastPaymentDate: Date | null,
+  nextDueDateFromDB: Date | null,
   today = new Date()
 ): FeeCalculation {
-  const startDate = lastPaymentDate
-    ? new Date(lastPaymentDate)
-    : new Date(joiningDate);
+  if (nextDueDateFromDB === null) {
+    // New student — never paid. Pending from joining date.
+    const paidUntil = new Date(joiningDate);
 
-  // Next due date = startDate + 1 month
-  const nextDueDate = new Date(startDate);
-  nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+    if (paidUntil > today) {
+      return {
+        pendingMonths: 0,
+        totalDueAmount: 0,
+        lastPaymentDate: null,
+        nextDueDate: paidUntil,
+        monthsElapsed: 0,
+        isOverdue: false,
+      };
+    }
 
-  // If next due date is in the future, nothing is due
-  if (nextDueDate > today) {
+    const monthsElapsed = monthsBetween(paidUntil, today);
+    const pendingMonths = monthsElapsed + 1;
+    return {
+      pendingMonths,
+      totalDueAmount: pendingMonths * monthlyFee,
+      lastPaymentDate: null,
+      nextDueDate: paidUntil,
+      monthsElapsed,
+      isOverdue: true,
+    };
+  }
+
+  // Student has paid. nextDueDateFromDB = date until which they are covered.
+  const paidUntil = new Date(nextDueDateFromDB);
+
+  if (paidUntil > today) {
+    // Still within paid period — nothing due.
     return {
       pendingMonths: 0,
       totalDueAmount: 0,
-      lastPaymentDate,
-      nextDueDate,
+      lastPaymentDate: null,
+      nextDueDate: paidUntil,
       monthsElapsed: 0,
       isOverdue: false,
     };
   }
 
-  // Calculate months elapsed since last payment (or joining)
-  const monthsElapsed = monthsBetween(startDate, today);
-  const pendingMonths = Math.max(0, monthsElapsed);
-  const totalDueAmount = pendingMonths * monthlyFee;
-
-  // Next due date after clearing all pending
-  const clearedUpTo = new Date(startDate);
-  clearedUpTo.setMonth(clearedUpTo.getMonth() + pendingMonths);
+  // today >= paidUntil → new billing cycle has started.
+  // At minimum 1 month is due (the new cycle). Each additional complete month
+  // that has elapsed adds one more.
+  const monthsElapsed = monthsBetween(paidUntil, today);
+  const pendingMonths = monthsElapsed + 1; // +1 because current cycle started
 
   return {
     pendingMonths,
-    totalDueAmount,
-    lastPaymentDate,
-    nextDueDate,
+    totalDueAmount: pendingMonths * monthlyFee,
+    lastPaymentDate: null,
+    nextDueDate: paidUntil,
     monthsElapsed,
-    isOverdue: pendingMonths > 0,
+    isOverdue: true,
   };
 }
 
-/** Count complete months between two dates */
+/** Count COMPLETE months elapsed from `from` to `to`. */
 function monthsBetween(from: Date, to: Date): number {
   const years = to.getFullYear() - from.getFullYear();
   const months = to.getMonth() - from.getMonth();
@@ -74,8 +103,11 @@ export interface StudentFeeRow {
   monthlyFee: number;
   discountAmount?: number | null;
   joiningDate: Date;
+  nextDueDate?: Date | null;   // used for accurate calculation
   lastPaymentDate: Date | null;
   paymentStatus: string;
+  totalDueAmount?: number;     // partial balance stored in DB
+  pendingMonths?: number;
   seat?: { seatNumber: string } | null;
   shift?: { name: string } | null;
 }
@@ -84,12 +116,22 @@ export function buildDueFeeRows(students: StudentFeeRow[]): (StudentFeeRow & Fee
   const today = new Date();
   return students
     .map((s) => {
-      const expectedFee = Math.max(0, s.monthlyFee - (s.discountAmount || 0));
+      const baseFee = Math.max(0, s.monthlyFee - (s.discountAmount || 0));
+      const calc = calculateDueFee(s.joiningDate, baseFee, s.nextDueDate ?? null, today);
+
+      // If the student has a partial balance in DB, add it to the total due
+      const partialBalance = s.totalDueAmount && s.totalDueAmount > 0 ? s.totalDueAmount : 0;
+      // But only add partialBalance if it's truly a partial (not the same as pendingMonths×fee)
+      // We detect partial balance by checking: totalDueAmount != pendingMonths * baseFee
+      const syncedDue = (s.pendingMonths || 0) * baseFee;
+      const extraPartial = partialBalance > syncedDue ? partialBalance - syncedDue : 0;
+
       return {
         ...s,
-        ...calculateDueFee(s.joiningDate, expectedFee, s.lastPaymentDate, today),
+        ...calc,
+        totalDueAmount: calc.totalDueAmount + extraPartial,
       };
     })
-    .filter((s) => s.pendingMonths > 0)
+    .filter((s) => s.pendingMonths > 0 || s.paymentStatus === "PARTIAL")
     .sort((a, b) => b.pendingMonths - a.pendingMonths);
 }

@@ -133,8 +133,8 @@ export async function verifyPayment(data: {
     else if (payment.paymentType === "HALF_YEARLY") monthsToAdd = 6;
     else if (payment.paymentType === "YEARLY") monthsToAdd = 12;
 
-    // Base nextDueDate on joiningDate or previous nextDueDate
-    const baseDate = payment.student?.nextDueDate && payment.student.nextDueDate > payment.student.joiningDate
+    // Base nextDueDate on last known nextDueDate (if set), otherwise joiningDate
+    const baseDate = payment.student?.nextDueDate
       ? new Date(payment.student.nextDueDate)
       : payment.student?.joiningDate ? new Date(payment.student.joiningDate) : new Date();
 
@@ -242,10 +242,18 @@ export async function recordManualPayment(data: {
     const paymentId = generateUniquePaymentId();
     const invoiceNumber = generateUniqueInvoiceNumber();
 
-    // Get student's monthly fee to determine if payment is partial
+    // Get student's current fee state
     const student = await prisma.student.findUnique({
       where: { id: data.studentId },
-      select: { monthlyFee: true, discountAmount: true, joiningDate: true, nextDueDate: true, totalDueAmount: true },
+      select: {
+        monthlyFee: true,
+        discountAmount: true,
+        joiningDate: true,
+        nextDueDate: true,
+        totalDueAmount: true,  // partial balance from last payment (if any)
+        pendingMonths: true,   // complete overdue months (from syncDueFees)
+        paymentStatus: true,
+      },
     });
 
     let monthsToAdd = 1;
@@ -256,23 +264,44 @@ export async function recordManualPayment(data: {
     const baseFee = student
       ? Math.max(0, (student.monthlyFee || 0) - (student.discountAmount || 0))
       : data.amount;
-      
-    const expectedFee = (baseFee * monthsToAdd) + (student?.totalDueAmount || 0);
 
-    // Determine payment status: PARTIAL if paid less than expected, PAID if full or overpaid
+    // partialBalance = amount still owed from a PREVIOUS partial payment.
+    // Since syncDueFees never writes totalDueAmount, this value is purely
+    // from payment actions. It represents an outstanding balance.
+    // Note: when paymentStatus is PENDING/OVERDUE (not PARTIAL), the
+    // totalDueAmount may still hold a balance that carried over from
+    // PARTIAL→PENDING transition, so we always respect it.
+    const partialBalance = Math.max(0, student?.totalDueAmount ?? 0);
+
+    // Total expected for this payment = (months being paid × baseFee) + any outstanding partial balance
+    const expectedFee = baseFee * monthsToAdd + partialBalance;
+
+    // Determine payment status
     const isPartial = data.amount < expectedFee;
-    const balanceDue = expectedFee - data.amount; // Will be negative if overpaid
+    const newBalance = expectedFee - data.amount; // positive = still owed, 0 = cleared
+
+    // Never credit — if amount > expectedFee, just mark as PAID with 0 balance
+    // (don't store a negative balance as credit, that's a separate feature)
+    const newTotalDue = isPartial ? newBalance : 0;
     const paymentStatus = isPartial ? "PARTIAL" : "PAID";
 
     const now = new Date();
-    
-    // Base nextDueDate on joiningDate or previous nextDueDate
-    const baseDate = student?.nextDueDate && student.nextDueDate > student.joiningDate
+
+    // Base nextDueDate on last known nextDueDate (if set), else joiningDate
+    const baseDate = student?.nextDueDate
       ? new Date(student.nextDueDate)
       : student?.joiningDate ? new Date(student.joiningDate) : new Date();
 
     const nextDue = new Date(baseDate);
     nextDue.setMonth(nextDue.getMonth() + monthsToAdd);
+
+    // Period labels for the payment record
+    const periodLabel = (() => {
+      const from = new Date(baseDate);
+      const to = new Date(nextDue);
+      const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      return `${fmt(from)} – ${fmt(to)}`;
+    })();
 
     await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
       const payment = await tx.payment.create({
@@ -286,15 +315,15 @@ export async function recordManualPayment(data: {
           status: paymentStatus,
           paidAt: now,
           description: isPartial
-            ? `${data.description || "Library Fee"} (Partial — ₹${balanceDue} due)`
-            : data.description,
-          periodStart: data.periodStart ? new Date(data.periodStart) : undefined,
-          periodEnd: data.periodEnd ? new Date(data.periodEnd) : undefined,
-          notes: balanceDue !== 0
-            ? `${balanceDue > 0 ? 'Partial payment' : 'Overpayment'}. Balance: ₹${balanceDue}. ${data.notes || ""}`
+            ? `${data.description || "Library Fee"} (Partial — ₹${newBalance} pending) | ${periodLabel}`
+            : `${data.description || "Library Fee"} | ${periodLabel}`,
+          periodStart: new Date(baseDate),
+          periodEnd: new Date(nextDue),
+          notes: isPartial
+            ? `Partial payment. Remaining balance: ₹${newBalance}. ${data.notes || ""}`
             : data.notes,
           totalAmount: data.amount,
-          lateFee: balanceDue,
+          lateFee: partialBalance > 0 ? partialBalance : 0, // record old dues for reference
           metadata: data.collectedBy ? { collectedBy: data.collectedBy } : undefined,
         },
       });
@@ -312,32 +341,25 @@ export async function recordManualPayment(data: {
           items: [
             {
               description: isPartial
-                ? `${data.description || "Library Fee"} (Partial payment — ₹${balanceDue} pending)`
-                : data.description || "Library Fee",
-              quantity: 1,
-              rate: expectedFee,
+                ? `${data.description || "Library Fee"} (Partial) | ${periodLabel} — ₹${newBalance} pending`
+                : `${data.description || "Library Fee"} | ${periodLabel}`,
+              quantity: monthsToAdd,
+              rate: baseFee,
               amount: data.amount,
             },
           ],
         },
       });
 
-      // Update student payment status
-      // PARTIAL = dues exist, PAID = fully paid
+      // Update student fee state
       await tx.student.update({
         where: { id: data.studentId },
         data: {
-          paymentStatus: isPartial ? "PARTIAL" : "PAID",
+          paymentStatus: paymentStatus,
           lastPaymentDate: now,
-          ...(isPartial ? {
-            // Keep dues tracking
-            totalDueAmount: balanceDue,
-            pendingMonths: 0, // current month partially paid
-          } : {
-            nextDueDate: nextDue,
-            pendingMonths: 0,
-            totalDueAmount: balanceDue < 0 ? balanceDue : 0, // Store negative balance as credit
-          }),
+          nextDueDate: nextDue,  // advance the cycle
+          pendingMonths: 0,       // reset; syncDueFees will recalculate
+          totalDueAmount: newTotalDue, // 0 if PAID, remaining balance if PARTIAL
         },
       });
     });
@@ -347,8 +369,9 @@ export async function recordManualPayment(data: {
       success: true,
       isPartial,
       amountPaid: data.amount,
-      balanceDue,
+      balanceDue: newBalance,
       paymentStatus,
+      periodLabel,
     };
   } catch (error) {
     console.error("Record manual payment error:", error);
@@ -411,36 +434,53 @@ export async function getPayments(params?: {
 
     const { studentId, status = "all", page = 1, limit = 20 } = params || {};
 
-    if (status === "PENDING") {
+    // ---------- helper: build virtual "pending" rows from students ----------
+    const buildPendingRows = async () => {
       const now = new Date();
-      const studentWhere = {
-        libraryId,
-        status: "ACTIVE" as const,
-        ...(studentId && { id: studentId }),
-        OR: [
-          { lastPaymentDate: null },
-          { nextDueDate: { lte: now } }
-        ]
-      };
+      // Fetch ALL active students (we filter after calculation)
+      const allActive = await prisma.student.findMany({
+        where: {
+          libraryId,
+          status: "ACTIVE" as const,
+          ...(studentId && { id: studentId }),
+        },
+      });
 
-      const [students, total] = await prisma.$transaction([
-        prisma.student.findMany({
-          where: studentWhere,
-          orderBy: { nextDueDate: "asc" },
-          skip: (page - 1) * limit,
-          take: limit,
-        }),
-        prisma.student.count({ where: studentWhere })
-      ]);
+      const { calculateDueFee } = await import("@/utils/fee-calculator");
 
-      const payments = students.map(s => {
+      const rows: Array<{
+        id: string;
+        paymentId: string;
+        amount: number;
+        totalAmount: number;
+        paymentType: string;
+        paymentMode: string;
+        status: string;
+        paidAt: null;
+        createdAt: Date;
+        student: { id: string; fullName: string; studentId: string; profilePhoto: string | null };
+        invoice: null;
+      }> = [];
+
+      for (const s of allActive) {
         const actualFee = Math.max(0, s.monthlyFee - (s.discountAmount || 0));
-        return {
+        const calc = calculateDueFee(s.joiningDate, actualFee, s.nextDueDate, now);
+
+        // Add partial balance that might be stored in DB
+        const partialBalance = s.totalDueAmount && s.totalDueAmount > 0 ? s.totalDueAmount : 0;
+        const syncedDue = (s.pendingMonths || 0) * actualFee;
+        const extraPartial = partialBalance > syncedDue ? partialBalance - syncedDue : 0;
+        const totalDue = calc.totalDueAmount + extraPartial;
+
+        // Only include students who actually owe money
+        if (totalDue <= 0) continue;
+
+        rows.push({
           id: s.id,
           paymentId: "PENDING",
-          amount: actualFee,
-          totalAmount: actualFee,
-          paymentType: "MONTHLY",
+          amount: totalDue,
+          totalAmount: totalDue,
+          paymentType: calc.pendingMonths > 1 ? "OTHER" : "MONTHLY",
           paymentMode: "DUE",
           status: "PENDING",
           paidAt: null,
@@ -449,19 +489,58 @@ export async function getPayments(params?: {
             id: s.id,
             fullName: s.fullName,
             studentId: s.studentId,
-            profilePhoto: s.profilePhoto
+            profilePhoto: s.profilePhoto,
           },
-          invoice: null
-        };
-      });
+          invoice: null,
+        });
+      }
 
-      return { payments, total, pages: Math.ceil(total / limit) };
+      return rows;
+    };
+
+    // ---------- PENDING tab ----------
+    if (status === "PENDING") {
+      const allPending = await buildPendingRows();
+      const total = allPending.length;
+      const paged = allPending.slice((page - 1) * limit, page * limit);
+      return { payments: paged, total, pages: Math.ceil(total / limit) };
     }
 
+    // ---------- "all" tab: real transactions + pending rows merged ----------
+    if (status === "all") {
+      // 1. Fetch real payment records
+      const paymentWhere = {
+        libraryId,
+        ...(studentId && { studentId }),
+      };
+      const [realPayments, realTotal] = await prisma.$transaction([
+        prisma.payment.findMany({
+          where: paymentWhere,
+          include: {
+            student: { select: { id: true, fullName: true, studentId: true, profilePhoto: true } },
+            invoice: { select: { invoiceNumber: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.payment.count({ where: paymentWhere }),
+      ]);
+
+      // 2. Build virtual pending rows
+      const pendingRows = await buildPendingRows();
+
+      // 3. Merge: pending first, then real payments (newest first)
+      const merged = [...pendingRows, ...realPayments];
+      const total = merged.length;
+      const paged = merged.slice((page - 1) * limit, page * limit);
+
+      return { payments: paged, total, pages: Math.ceil(total / limit) };
+    }
+
+    // ---------- Other specific status filters (PAID, PARTIAL, etc.) ----------
     const where = {
       libraryId,
       ...(studentId && { studentId }),
-      ...(status !== "all" && { status: status as "PENDING" | "PAID" | "OVERDUE" | "FAILED" | "REFUNDED" | "PARTIAL" }),
+      status: status as "PAID" | "OVERDUE" | "FAILED" | "REFUNDED" | "PARTIAL",
     };
 
     const [payments, total] = await prisma.$transaction([

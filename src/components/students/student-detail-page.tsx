@@ -180,10 +180,21 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-bold">{s.fullName}</h2>
                 <Badge variant={s.status === "ACTIVE" ? "default" : "destructive"} className="text-xs">{s.status}</Badge>
-                <Badge variant="outline" className={`text-xs ${s.paymentStatus === "PAID" ? "text-emerald-500 border-emerald-500/30" : "text-amber-500 border-amber-500/30"}`}>
-                  {s.paymentStatus === "PAID"
-                    ? `Paid until ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`
-                    : `Pending since ${s.nextDueDate ? formatDate(s.nextDueDate) : "—"}`}
+                <Badge variant="outline" className={`text-xs ${
+                  s.paymentStatus === "PAID" ? "text-emerald-500 border-emerald-500/30"
+                  : s.paymentStatus === "PARTIAL" ? "text-blue-400 border-blue-400/30"
+                  : s.payments.length === 0 ? "text-muted-foreground border-border"
+                  : "text-amber-500 border-amber-500/30"
+                }`}>
+                  {s.paymentStatus === "PAID" && s.nextDueDate
+                    ? `Paid until ${formatDate(s.nextDueDate)}`
+                  : s.paymentStatus === "PARTIAL" && s.nextDueDate
+                    ? `Partial — ₹${s.totalDueAmount?.toLocaleString("en-IN")} pending until ${formatDate(s.nextDueDate)}`
+                  : s.payments.length === 0
+                    ? "No payment yet"
+                  : s.nextDueDate
+                    ? `Due since ${formatDate(s.nextDueDate)}`
+                  : "Dues pending"}
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
@@ -257,7 +268,13 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
                 {[
                   ["Joining Date", formatDate(s.joiningDate)],
                   ["Expiry Date", s.expiryDate ? formatDate(s.expiryDate) : "N/A"],
-                  ["Fee Paid Until", s.nextDueDate ? formatDate(s.nextDueDate) : "N/A"],
+                  ["Fee Paid Until", s.paymentStatus === "PAID" && s.nextDueDate
+                    ? formatDate(s.nextDueDate)
+                    : s.paymentStatus === "PARTIAL" && s.nextDueDate
+                    ? `${formatDate(s.nextDueDate)} (Partial — ₹${s.totalDueAmount?.toLocaleString("en-IN")} pending)`
+                    : s.payments.length > 0 && s.nextDueDate
+                    ? `${formatDate(s.nextDueDate)} (overdue)`
+                    : "Not yet paid"],
                   ["Monthly Fee", formatCurrency(s.monthlyFee)],
                   ["Discount", formatCurrency(s.discountAmount)],
                   ["Net Monthly", formatCurrency(s.monthlyFee - s.discountAmount)],

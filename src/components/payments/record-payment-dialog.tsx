@@ -20,6 +20,20 @@ import { getStudents } from "@/actions/students";
 import { getWorkers } from "@/actions/workers";
 import type { PaymentFormData } from "@/schemas";
 import { SearchableStudentSelect } from "@/components/ui/searchable-student-select";
+import { AlertCircle, Info } from "lucide-react";
+
+interface StudentOption {
+  id: string;
+  fullName: string;
+  studentId: string;
+  monthlyFee: number;
+  discountAmount: number;
+  totalDueAmount: number;   // partial balance from last payment
+  pendingMonths: number;
+  paymentStatus: string;
+  nextDueDate: string | null;
+  joiningDate: string;
+}
 
 interface RecordPaymentDialogProps {
   open: boolean;
@@ -32,7 +46,7 @@ export function RecordPaymentDialog({
   open, onOpenChange, onSuccess, preSelectedStudentId,
 }: RecordPaymentDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [students, setStudents] = useState<{ id: string; fullName: string; studentId: string; monthlyFee: number; discountAmount: number; totalDueAmount: number }[]>([]);
+  const [students, setStudents] = useState<StudentOption[]>([]);
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
 
@@ -58,18 +72,33 @@ export function RecordPaymentDialog({
     }
   };
 
-  // Net fee after discount × duration multiplier
-  const netMonthlyFee = selectedStudent 
+  const monthsToAdd = getMonthsMultiplier(selectedPaymentType || "MONTHLY");
+
+  // Net monthly fee after discount
+  const netMonthlyFee = selectedStudent
     ? Math.max(0, selectedStudent.monthlyFee - (selectedStudent.discountAmount || 0))
     : 0;
 
-  const expectedBaseAmount = selectedStudent 
-    ? netMonthlyFee * getMonthsMultiplier(selectedPaymentType || "MONTHLY")
-    : 0;
+  // Base amount for the selected duration
+  const baseAmount = netMonthlyFee * monthsToAdd;
 
-  const expectedAmount = selectedStudent 
-    ? Math.max(0, expectedBaseAmount + (selectedStudent.totalDueAmount || 0))
-    : 0;
+  // Partial balance from previous payment (stored as totalDueAmount, never overwritten by sync)
+  const partialBalance = selectedStudent ? Math.max(0, selectedStudent.totalDueAmount || 0) : 0;
+
+  // Total payable = current period fee + previous partial balance
+  const expectedAmount = baseAmount + partialBalance;
+
+  // What period is being paid for?
+  const getPeriodLabel = () => {
+    if (!selectedStudent) return "";
+    const baseDate = selectedStudent.nextDueDate
+      ? new Date(selectedStudent.nextDueDate)
+      : new Date(selectedStudent.joiningDate);
+    const endDate = new Date(baseDate);
+    endDate.setMonth(endDate.getMonth() + monthsToAdd);
+    const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return `${fmt(baseDate)} – ${fmt(endDate)}`;
+  };
 
   useEffect(() => {
     if (open) {
@@ -82,6 +111,10 @@ export function RecordPaymentDialog({
             monthlyFee: s.monthlyFee as number,
             discountAmount: (s.discountAmount as number) || 0,
             totalDueAmount: (s.totalDueAmount as number) || 0,
+            pendingMonths: (s.pendingMonths as number) || 0,
+            paymentStatus: (s.paymentStatus as string) || "PAID",
+            nextDueDate: (s.nextDueDate as string) || null,
+            joiningDate: (s.joiningDate as string) || new Date().toISOString(),
           })));
         }
       });
@@ -119,11 +152,11 @@ export function RecordPaymentDialog({
     } else {
       if (result.isPartial) {
         toast.warning(
-          `Partial payment recorded. ₹${result.balanceDue} balance due.`,
-          { duration: 5000 }
+          `Partial payment recorded for ${result.periodLabel || "this period"}. ₹${result.balanceDue} still pending.`,
+          { duration: 6000 }
         );
       } else {
-        toast.success("Payment recorded successfully");
+        toast.success(`Payment recorded! Period: ${result.periodLabel || "this period"}`);
       }
       reset();
       setSelectedWorkerId("");
@@ -131,6 +164,9 @@ export function RecordPaymentDialog({
     }
     setLoading(false);
   };
+
+  const periodLabel = getPeriodLabel();
+  const isStudentHasPartialBalance = partialBalance > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -204,6 +240,20 @@ export function RecordPaymentDialog({
             </div>
           </div>
 
+          {/* Period being paid for */}
+          {selectedStudent && periodLabel && (
+            <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-400 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Period being paid:</p>
+                <p>{periodLabel}</p>
+                {selectedStudent.pendingMonths > 0 && (
+                  <p className="mt-0.5 text-amber-400">⚠ {selectedStudent.pendingMonths} overdue month{selectedStudent.pendingMonths > 1 ? "s" : ""}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label>Amount (₹) *</Label>
             <Input
@@ -215,35 +265,42 @@ export function RecordPaymentDialog({
             />
             {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
             {selectedStudent && (
-              <div className="text-xs text-muted-foreground space-y-0.5 mt-1">
-                <p>
-                  Monthly Fee: ₹{selectedStudent.monthlyFee.toLocaleString("en-IN")}
-                  {selectedStudent.discountAmount > 0 && (
-                    <span className="text-emerald-500 ml-1">— Discount: ₹{selectedStudent.discountAmount.toLocaleString("en-IN")}</span>
-                  )}
-                </p>
-                {selectedStudent.totalDueAmount !== 0 && (
-                  <p className="font-medium text-foreground">
-                    {selectedStudent.totalDueAmount > 0 
-                      ? <span className="text-orange-500">Dues (Previous): +₹{selectedStudent.totalDueAmount.toLocaleString("en-IN")}</span>
-                      : <span className="text-emerald-500">Credit (Overpaid): -₹{Math.abs(selectedStudent.totalDueAmount).toLocaleString("en-IN")}</span>
-                    }
-                  </p>
+              <div className="text-xs text-muted-foreground space-y-1 mt-1 rounded-md border border-border bg-muted/30 p-2">
+                <div className="flex justify-between">
+                  <span>Monthly Fee:</span>
+                  <span>₹{selectedStudent.monthlyFee.toLocaleString("en-IN")}</span>
+                </div>
+                {selectedStudent.discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-500">
+                    <span>Discount:</span>
+                    <span>−₹{selectedStudent.discountAmount.toLocaleString("en-IN")}</span>
+                  </div>
                 )}
-                <p className="font-semibold text-foreground text-sm mt-2">
-                  Total Payable: ₹{expectedAmount.toLocaleString("en-IN")}
-                  {getMonthsMultiplier(selectedPaymentType || "MONTHLY") > 1 && (
-                    <span className="text-muted-foreground font-normal text-xs"> (₹{netMonthlyFee.toLocaleString("en-IN")} × {getMonthsMultiplier(selectedPaymentType || "MONTHLY")} months)</span>
-                  )}
-                </p>
-                <p>Partial amount will be recorded as dues.</p>
+                <div className="flex justify-between">
+                  <span>Net Fee × {monthsToAdd} month{monthsToAdd > 1 ? "s" : ""}:</span>
+                  <span>₹{baseAmount.toLocaleString("en-IN")}</span>
+                </div>
+                {isStudentHasPartialBalance && (
+                  <div className="flex justify-between text-orange-400 items-center gap-1">
+                    <span className="flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      Previous balance due:
+                    </span>
+                    <span>+₹{partialBalance.toLocaleString("en-IN")}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-semibold text-foreground border-t border-border pt-1 mt-1">
+                  <span>Total Payable:</span>
+                  <span>₹{expectedAmount.toLocaleString("en-IN")}</span>
+                </div>
+                <p className="text-muted-foreground/70 text-[11px]">Paying less than total will be recorded as partial.</p>
               </div>
             )}
           </div>
 
           <div className="space-y-1.5">
             <Label>Description</Label>
-            <Input placeholder="e.g. June 2024 fee" {...register("description")} />
+            <Input placeholder="e.g. July 2025 fee" {...register("description")} />
           </div>
 
           <div className="space-y-1.5">

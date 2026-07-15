@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendSubscriptionReminders, sendStudentFeeReminders } from "@/actions/subscription-reminders";
 import { archiveAndDeleteExpenses } from "@/actions/workers";
 import { cleanOldAttendanceRecords } from "@/actions/attendance";
+import { syncGlobalDueFees } from "@/actions/fees";
 
 export const dynamic = 'force-dynamic';
 
@@ -17,11 +18,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [subResult, feeResult, expenseResult, attendanceCleanup] = await Promise.all([
+    const [subResult, feeResult, expenseResult, attendanceCleanup, syncFeesResult] = await Promise.all([
       sendSubscriptionReminders(),
       sendStudentFeeReminders(),
       archiveAndDeleteExpenses(),
       cleanOldAttendanceRecords(),
+      syncGlobalDueFees(),
     ]);
 
     return NextResponse.json({
@@ -37,6 +39,7 @@ export async function GET(req: NextRequest) {
       workerExpensesArchived: "archivedCount" in expenseResult ? expenseResult.archivedCount : 0,
       workerExpensesDeleted: "deletedCount" in expenseResult ? expenseResult.deletedCount : 0,
       attendanceRecordsDeleted: "deletedCount" in attendanceCleanup ? attendanceCleanup.deletedCount : 0,
+      studentsFeesSynced: "updated" in syncFeesResult ? syncFeesResult.updated : 0,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

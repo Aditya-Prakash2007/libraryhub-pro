@@ -59,7 +59,13 @@ export async function sendWhatsAppTextMessage({
       body: body.toString(),
     });
 
-    const data = await res.json();
+    let data;
+    const rawText = await res.text();
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      data = { raw: rawText };
+    }
 
     if (!res.ok) {
       console.error("[WATI] Text API error:", data);
@@ -108,7 +114,13 @@ export async function sendWhatsAppTemplate({
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    let data;
+    const rawText = await res.text();
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      data = { raw: rawText };
+    }
 
     if (!res.ok) {
       console.error(`[WATI] Template "${templateName}" API error:`, data);
