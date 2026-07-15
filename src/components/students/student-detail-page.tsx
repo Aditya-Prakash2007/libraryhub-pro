@@ -21,6 +21,7 @@ import { formatDate, formatCurrency, getInitials, formatDateTime } from "@/lib/u
 import { deleteStudent, toggleStudentStatus } from "@/actions/students";
 import { sendSingleFeeReminder } from "@/actions/fees";
 import { PaymentCalendar } from "@/components/students/payment-calendar";
+import { useLoading } from "@/providers/loading-provider";
 
 
 interface StudentDetailPageProps {
@@ -68,6 +69,7 @@ interface StudentDetailPageProps {
 
 export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
   const router = useRouter();
+  const { setIsLoading } = useLoading();
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
@@ -75,13 +77,16 @@ export function StudentDetailPage({ student: s }: StudentDetailPageProps) {
   const handleDelete = async () => {
     if (!confirm(`Permanently delete "${s.fullName}"? This cannot be undone.`)) return;
     setDeleting(true);
+    setIsLoading(true);
     const result = await deleteStudent(s.id);
     if ("error" in result) {
       toast.error(result.error);
+      setIsLoading(false);
       setDeleting(false);
     } else {
       toast.success("Student deleted");
       router.push("/admin/students");
+      // loader stays on until route change clears it via LoadingProvider
     }
   };
 

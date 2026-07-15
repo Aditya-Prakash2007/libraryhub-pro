@@ -74,9 +74,11 @@ interface ShiftOption {
 }
 
 import { useSearchParams } from "next/navigation";
+import { useLoading } from "@/providers/loading-provider";
 
 export function StudentsPage() {
   const searchParams = useSearchParams();
+  const { setIsLoading } = useLoading();
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -93,6 +95,7 @@ export function StudentsPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   // Shifts for filter dropdown only (not for dialog — dialog loads fresh)
   const [filterShifts, setFilterShifts] = useState<ShiftOption[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
@@ -124,7 +127,11 @@ export function StudentsPage() {
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete student "${name}"? This action cannot be undone.`)) return;
+    setDeletingId(id);
+    setIsLoading(true);
     const result = await deleteStudent(id);
+    setIsLoading(false);
+    setDeletingId(null);
     if ("error" in result) toast.error(result.error);
     else { toast.success("Student deleted"); loadStudents(); }
   };
@@ -289,8 +296,10 @@ export function StudentsPage() {
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => handleDelete(row.id, row.fullName)}
+              disabled={deletingId === row.id}
             >
-              <Trash2 className="w-4 h-4 mr-2" /> Delete
+              <Trash2 className="w-4 h-4 mr-2" />
+              {deletingId === row.id ? "Deleting…" : "Delete"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -363,7 +372,7 @@ export function StudentsPage() {
       <DataTable
         data={students}
         columns={columns}
-        loading={loading}
+        loading={loading || !!deletingId}
         emptyTitle="No students found"
         emptyDescription="Add your first student to get started"
         pagination={{ page, total, pages, onPageChange: setPage }}

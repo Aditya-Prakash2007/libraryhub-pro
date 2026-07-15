@@ -448,49 +448,43 @@ export async function deleteStudent(id: string) {
     const student = await prisma.student.findFirst({ where: { id, libraryId } });
     if (!student) return { error: "Student not found" };
 
-    await prisma.$transaction(async (tx) => {
-      // --- User-level cleanup first (if userId exists) ---
-      // Notification.userId and ActivityLog.userId are required fields in Prisma,
-      // so we must delete these records BEFORE deleting the user.
-      if (student.userId) {
-        await tx.notification.deleteMany({ where: { userId: student.userId } });
-        await tx.activityLog.deleteMany({ where: { userId: student.userId } });
-        await tx.session.deleteMany({ where: { userId: student.userId } });
-        await tx.account.deleteMany({ where: { userId: student.userId } });
+    // Run sequential deletes WITHOUT an interactive transaction to avoid
+    // the 5s MongoDB transaction timeout on slow Atlas connections.
+    // Order matters: delete dependents before the records they reference.
+
+    // 1. User-level dependents first (Notification.userId & ActivityLog.userId are required)
+    if (student.userId) {
+      await prisma.notification.deleteMany({ where: { userId: student.userId } });
+      await prisma.activityLog.deleteMany({ where: { userId: student.userId } });
+      await prisma.session.deleteMany({ where: { userId: student.userId } });
+      await prisma.account.deleteMany({ where: { userId: student.userId } });
+    }
+
+    // 2. Student-level dependents
+    await prisma.invoice.deleteMany({ where: { studentId: id } });
+    await prisma.payment.deleteMany({ where: { studentId: id } });
+    await prisma.attendance.deleteMany({ where: { studentId: id } });
+    await prisma.document.deleteMany({ where: { studentId: id } });
+    await prisma.waitlist.deleteMany({ where: { studentId: id } });
+    await prisma.studentFeedback.deleteMany({ where: { studentId: id } });
+
+    // 3. Free the seat if this was the last active student on it
+    if (student.seatId) {
+      const otherActive = await prisma.student.count({
+        where: { seatId: student.seatId, status: "ACTIVE", id: { not: id } },
+      });
+      if (otherActive === 0) {
+        await prisma.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
       }
+    }
 
-      // --- Student-level cleanup ---
-      // 1. Delete invoices (before payments — paymentId unique ref)
-      await tx.invoice.deleteMany({ where: { studentId: id } });
-      // 2. Delete payments
-      await tx.payment.deleteMany({ where: { studentId: id } });
-      // 3. Delete attendance
-      await tx.attendance.deleteMany({ where: { studentId: id } });
-      // 4. Delete documents
-      await tx.document.deleteMany({ where: { studentId: id } });
-      // 5. Delete waitlist entries
-      await tx.waitlist.deleteMany({ where: { studentId: id } });
-      // 6. Delete student feedbacks
-      await tx.studentFeedback.deleteMany({ where: { studentId: id } });
+    // 4. Delete the student record
+    await prisma.student.delete({ where: { id } });
 
-      // 7. Free the seat if this was the last active student on it
-      if (student.seatId) {
-        const otherActive = await tx.student.count({
-          where: { seatId: student.seatId, status: "ACTIVE", id: { not: id } },
-        });
-        if (otherActive === 0) {
-          await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
-        }
-      }
-
-      // 8. Delete the student record
-      await tx.student.delete({ where: { id } });
-
-      // 9. Finally delete the User account
-      if (student.userId) {
-        await tx.user.delete({ where: { id: student.userId } });
-      }
-    });
+    // 5. Finally delete the User account
+    if (student.userId) {
+      await prisma.user.delete({ where: { id: student.userId } });
+    }
 
     revalidatePath("/admin/students");
     revalidatePath("/admin/dashboard");
