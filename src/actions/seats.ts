@@ -98,30 +98,68 @@ export async function bulkCreateSeats(
     const libraryId = await getAdminLibraryId();
     if (!libraryId) return { error: "Unauthorized" };
 
-    const seats = [];
+    // Build the full list of seat numbers that are being requested
+    const requestedSeats: { seatNumber: string; num: number }[] = [];
     for (let i = startNum; i <= endNum; i++) {
-      // Empty prefix = pure sequential numbers (1, 2, 3...)
-      const seatNumber = prefix ? `${prefix}${String(i).padStart(2, "0")}` : String(i).padStart(2, "0");
-      seats.push({
-        seatNumber,
+      const seatNumber = prefix
+        ? `${prefix}${String(i).padStart(2, "0")}`
+        : String(i).padStart(2, "0");
+      requestedSeats.push({ seatNumber, num: i });
+    }
+
+    const requestedNumbers = requestedSeats.map((s) => s.seatNumber);
+
+    // Find which seat numbers already exist for this library + shiftId combo
+    const existing = await prisma.seat.findMany({
+      where: {
+        libraryId,
+        seatNumber: { in: requestedNumbers },
+        shiftId: shiftId || null,
+      },
+      select: { seatNumber: true },
+    });
+
+    const existingSet = new Set(existing.map((s) => s.seatNumber));
+
+    // Only keep seats that don't already exist
+    const newSeats = requestedSeats
+      .filter((s) => !existingSet.has(s.seatNumber))
+      .map((s) => ({
+        seatNumber: s.seatNumber,
         floor,
         libraryId,
         shiftId: shiftId || null,
         status: "AVAILABLE" as const,
         seatType: "STANDARD" as const,
         amenities: [] as string[],
-      });
+      }));
+
+    if (newSeats.length === 0) {
+      return {
+        success: true,
+        count: 0,
+        skipped: existing.length,
+        message: `All ${existing.length} seat(s) already exist. Nothing to add.`,
+      };
     }
 
-    await prisma.seat.createMany({ data: seats });
+    await prisma.seat.createMany({ data: newSeats });
 
     await prisma.library.update({
       where: { id: libraryId },
-      data: { totalSeats: { increment: seats.length } },
+      data: { totalSeats: { increment: newSeats.length } },
     });
 
     revalidatePath("/admin/seats");
-    return { success: true, count: seats.length };
+    return {
+      success: true,
+      count: newSeats.length,
+      skipped: existingSet.size,
+      message:
+        existingSet.size > 0
+          ? `Created ${newSeats.length} seat(s). Skipped ${existingSet.size} already existing seat(s).`
+          : `Created ${newSeats.length} seat(s) successfully.`,
+    };
   } catch (error) {
     console.error("Bulk create seats error:", error);
     return { error: "Failed to create seats" };

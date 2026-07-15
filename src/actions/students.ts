@@ -449,58 +449,55 @@ export async function deleteStudent(id: string) {
     if (!student) return { error: "Student not found" };
 
     await prisma.$transaction(async (tx) => {
-      // 1. Delete associated invoices
-      await tx.invoice.deleteMany({ where: { studentId: id } });
+      // --- User-level cleanup first (if userId exists) ---
+      // Notification.userId and ActivityLog.userId are required fields in Prisma,
+      // so we must delete these records BEFORE deleting the user.
+      if (student.userId) {
+        await tx.notification.deleteMany({ where: { userId: student.userId } });
+        await tx.activityLog.deleteMany({ where: { userId: student.userId } });
+        await tx.session.deleteMany({ where: { userId: student.userId } });
+        await tx.account.deleteMany({ where: { userId: student.userId } });
+      }
 
+      // --- Student-level cleanup ---
+      // 1. Delete invoices (before payments — paymentId unique ref)
+      await tx.invoice.deleteMany({ where: { studentId: id } });
       // 2. Delete payments
       await tx.payment.deleteMany({ where: { studentId: id } });
-
       // 3. Delete attendance
       await tx.attendance.deleteMany({ where: { studentId: id } });
-
       // 4. Delete documents
       await tx.document.deleteMany({ where: { studentId: id } });
-
-      // 5. Delete notifications
-      await tx.notification.deleteMany({ where: { studentId: id } });
-
-      // 6. Delete waitlist entries
+      // 5. Delete waitlist entries
       await tx.waitlist.deleteMany({ where: { studentId: id } });
-
-      // 7. Delete activity logs
-      await tx.activityLog.deleteMany({ where: { studentId: id } });
-
-      // 8. Delete student feedbacks
+      // 6. Delete student feedbacks
       await tx.studentFeedback.deleteMany({ where: { studentId: id } });
 
-      // 9. Update seat status if occupied
+      // 7. Free the seat if this was the last active student on it
       if (student.seatId) {
         const otherActive = await tx.student.count({
-          where: {
-            seatId: student.seatId,
-            status: "ACTIVE",
-            id: { not: id },
-          },
+          where: { seatId: student.seatId, status: "ACTIVE", id: { not: id } },
         });
         if (otherActive === 0) {
           await tx.seat.update({ where: { id: student.seatId }, data: { status: "AVAILABLE" } });
         }
       }
 
-      // 10. Delete the student
+      // 8. Delete the student record
       await tx.student.delete({ where: { id } });
 
-      // 11. Delete associated User if any
+      // 9. Finally delete the User account
       if (student.userId) {
         await tx.user.delete({ where: { id: student.userId } });
       }
     });
 
     revalidatePath("/admin/students");
+    revalidatePath("/admin/dashboard");
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Delete student error:", error);
-    return { error: "Failed to delete student" };
+    return { error: "Failed to delete student: " + (error?.message ?? "Unknown error") };
   }
 }
 
