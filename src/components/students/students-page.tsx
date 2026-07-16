@@ -44,6 +44,8 @@ interface StudentRow {
   monthlyFee: number;
   joiningDate: Date | string;
   expiryDate?: Date | string | null;
+  nextDueDate?: Date | string | null;
+  totalDueAmount?: number;
   attendancePercentage: number;
   shiftId?: string | null;
   seatId?: string | null;
@@ -197,6 +199,7 @@ export function StudentsPage() {
       PAID: "bg-emerald-500/15 text-emerald-500",
       PENDING: "bg-amber-500/15 text-amber-500",
       OVERDUE: "bg-rose-500/15 text-rose-500",
+      PARTIAL: "bg-blue-500/15 text-blue-400",
       FAILED: "bg-rose-600/15 text-rose-600",
     };
     return (
@@ -204,6 +207,31 @@ export function StudentsPage() {
         {status}
       </span>
     );
+  };
+
+  const formatShortDate = (date: Date | string) => {
+    const d = new Date(date);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const paymentSubtext = (row: StudentRow): string | null => {
+    const net = row.monthlyFee - (row.discountAmount ?? 0);
+    switch (row.paymentStatus) {
+      case "PAID":
+        return row.nextDueDate ? `Until ${formatShortDate(row.nextDueDate)}` : null;
+      case "PARTIAL":
+        return row.nextDueDate
+          ? `${formatCurrency(row.totalDueAmount ?? net)} pending · ${formatShortDate(row.nextDueDate)}`
+          : `${formatCurrency(row.totalDueAmount ?? net)} pending`;
+      case "OVERDUE":
+        return row.nextDueDate
+          ? `Overdue since ${formatShortDate(row.nextDueDate)}`
+          : `${formatCurrency(row.totalDueAmount ?? net)} overdue`;
+      case "PENDING":
+        return `${formatCurrency(net)} due this month`;
+      default:
+        return null;
+    }
   };
 
   const columns: Column<StudentRow>[] = [
@@ -246,14 +274,25 @@ export function StudentsPage() {
     { key: "fee", header: "Monthly Fee", cell: (row) => (<span className="text-sm font-medium">{formatCurrency(row.monthlyFee)}</span>), },
     { key: "total", header: "Total Payable", cell: (row) => (<span className="text-sm font-medium">{formatCurrency(row.monthlyFee - (row.discountAmount ?? 0))}</span>), },
     { key: "status", header: "Status", cell: (row) => statusBadge(row.status) },
-    { key: "payment", header: "Payment", cell: (row) => (
-        <div className="flex flex-col items-start">
-          {paymentBadge(row.paymentStatus)}
-          {(row.paymentStatus === "PENDING" || row.paymentStatus === "OVERDUE") && (
-            <span className="text-xs text-muted-foreground mt-1">Due: {formatCurrency(row.monthlyFee - (row.discountAmount ?? 0))}</span>
-          )}
-        </div>
-      ) },
+    { key: "payment", header: "Payment", cell: (row) => {
+        const sub = paymentSubtext(row);
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            {paymentBadge(row.paymentStatus)}
+            {sub && (
+              <span className={`text-xs mt-0.5 ${
+                row.paymentStatus === "PAID" ? "text-emerald-600/70 dark:text-emerald-400/70" :
+                row.paymentStatus === "PARTIAL" ? "text-blue-500/80" :
+                row.paymentStatus === "OVERDUE" ? "text-rose-500/80" :
+                "text-muted-foreground"
+              }`}>
+                {sub}
+              </span>
+            )}
+          </div>
+        );
+      }
+    },
     {
       key: "attendance",
       header: "Attendance",
