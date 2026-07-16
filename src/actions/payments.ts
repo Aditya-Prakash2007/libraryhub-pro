@@ -265,24 +265,25 @@ export async function recordManualPayment(data: {
       ? Math.max(0, (student.monthlyFee || 0) - (student.discountAmount || 0))
       : data.amount;
 
-    // partialBalance = amount still owed from a PREVIOUS partial payment.
-    // Since syncDueFees never writes totalDueAmount, this value is purely
-    // from payment actions. It represents an outstanding balance.
-    // Note: when paymentStatus is PENDING/OVERDUE (not PARTIAL), the
-    // totalDueAmount may still hold a balance that carried over from
-    // PARTIAL→PENDING transition, so we always respect it.
-    const partialBalance = Math.max(0, student?.totalDueAmount ?? 0);
+    // partialBalance = outstanding balance from previous payment
+    // If totalDueAmount is negative → advance credit from overpayment last time
+    // If totalDueAmount is positive → pending balance still owed
+    const storedDue = student?.totalDueAmount ?? 0;
+    const partialBalance = storedDue > 0 ? storedDue : 0;  // owed from before
+    const advanceCredit = storedDue < 0 ? Math.abs(storedDue) : 0; // credit from before
 
-    // Total expected for this payment = (months being paid × baseFee) + any outstanding partial balance
-    const expectedFee = baseFee * monthsToAdd + partialBalance;
+    // Total expected = (months × baseFee) + any pending balance - any advance credit
+    const expectedFee = Math.max(0, baseFee * monthsToAdd + partialBalance - advanceCredit);
 
-    // Determine payment status
-    const isPartial = data.amount < expectedFee;
-    const newBalance = expectedFee - data.amount; // positive = still owed, 0 = cleared
-
-    // Never credit — if amount > expectedFee, just mark as PAID with 0 balance
-    // (don't store a negative balance as credit, that's a separate feature)
-    const newTotalDue = isPartial ? newBalance : 0;
+    // Determine payment status and balances
+    // Positive newBalance = still owed (partial)
+    // Negative newBalance = overpaid (credit to apply next month)
+    const rawBalance = expectedFee - data.amount;
+    const isPartial = rawBalance > 0;
+    const isOverpaid = rawBalance < 0;
+    const creditAmount = isOverpaid ? Math.abs(rawBalance) : 0;   // extra paid
+    const newTotalDue = isPartial ? rawBalance : isOverpaid ? -creditAmount : 0;
+    // Negative totalDueAmount = advance credit (reduces next month's fee)
     const paymentStatus = isPartial ? "PARTIAL" : "PAID";
 
     const now = new Date();
@@ -315,15 +316,19 @@ export async function recordManualPayment(data: {
           status: paymentStatus,
           paidAt: now,
           description: isPartial
-            ? `${data.description || "Library Fee"} (Partial — ₹${newBalance} pending) | ${periodLabel}`
+            ? `${data.description || "Library Fee"} (Partial — ₹${rawBalance} pending) | ${periodLabel}`
+            : isOverpaid
+            ? `${data.description || "Library Fee"} (₹${creditAmount} advance credit) | ${periodLabel}`
             : `${data.description || "Library Fee"} | ${periodLabel}`,
           periodStart: new Date(baseDate),
           periodEnd: new Date(nextDue),
           notes: isPartial
-            ? `Partial payment. Remaining balance: ₹${newBalance}. ${data.notes || ""}`
+            ? `Partial payment. Remaining balance: ₹${rawBalance}. ${data.notes || ""}`
+            : isOverpaid
+            ? `Overpayment. ₹${creditAmount} will be adjusted in next month's fee. ${data.notes || ""}`
             : data.notes,
           totalAmount: data.amount,
-          lateFee: partialBalance > 0 ? partialBalance : 0, // record old dues for reference
+          lateFee: partialBalance > 0 ? partialBalance : 0,
           metadata: data.collectedBy ? { collectedBy: data.collectedBy } : undefined,
         },
       });
@@ -341,7 +346,9 @@ export async function recordManualPayment(data: {
           items: [
             {
               description: isPartial
-                ? `${data.description || "Library Fee"} (Partial) | ${periodLabel} — ₹${newBalance} pending`
+                ? `${data.description || "Library Fee"} (Partial) | ${periodLabel} — ₹${rawBalance} pending`
+                : isOverpaid
+                ? `${data.description || "Library Fee"} | ${periodLabel} (₹${creditAmount} advance credit applied next month)`
                 : `${data.description || "Library Fee"} | ${periodLabel}`,
               quantity: monthsToAdd,
               rate: baseFee,
@@ -352,14 +359,15 @@ export async function recordManualPayment(data: {
       });
 
       // Update student fee state
+      // totalDueAmount: positive = still owed (partial), negative = advance credit
       await tx.student.update({
         where: { id: data.studentId },
         data: {
           paymentStatus: paymentStatus,
           lastPaymentDate: now,
-          nextDueDate: nextDue,  // advance the cycle
-          pendingMonths: 0,       // reset; syncDueFees will recalculate
-          totalDueAmount: newTotalDue, // 0 if PAID, remaining balance if PARTIAL
+          nextDueDate: nextDue,
+          pendingMonths: 0,
+          totalDueAmount: newTotalDue,
         },
       });
     });
@@ -368,8 +376,10 @@ export async function recordManualPayment(data: {
     return {
       success: true,
       isPartial,
+      isOverpaid,
       amountPaid: data.amount,
-      balanceDue: newBalance,
+      balanceDue: isPartial ? rawBalance : 0,
+      creditAmount,
       paymentStatus,
       periodLabel,
     };

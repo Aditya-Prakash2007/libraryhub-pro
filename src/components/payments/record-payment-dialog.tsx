@@ -83,10 +83,13 @@ export function RecordPaymentDialog({
   const baseAmount = netMonthlyFee * monthsToAdd;
 
   // Partial balance from previous payment (stored as totalDueAmount, never overwritten by sync)
-  const partialBalance = selectedStudent ? Math.max(0, selectedStudent.totalDueAmount || 0) : 0;
+  // Negative totalDueAmount = advance credit from overpayment last time
+  const storedDue = selectedStudent?.totalDueAmount ?? 0;
+  const partialBalance = storedDue > 0 ? storedDue : 0;      // still owed
+  const advanceCredit = storedDue < 0 ? Math.abs(storedDue) : 0; // credit to adjust
 
-  // Total payable = current period fee + previous partial balance
-  const expectedAmount = baseAmount + partialBalance;
+  // Total payable = current period fee + pending balance - advance credit
+  const expectedAmount = Math.max(0, baseAmount + partialBalance - advanceCredit);
 
   // What period is being paid for?
   const getPeriodLabel = () => {
@@ -152,7 +155,12 @@ export function RecordPaymentDialog({
     } else {
       if (result.isPartial) {
         toast.warning(
-          `Partial payment recorded for ${result.periodLabel || "this period"}. ₹${result.balanceDue} still pending.`,
+          `Partial payment recorded. ₹${result.balanceDue} still pending — will be added to next month.`,
+          { duration: 6000 }
+        );
+      } else if (result.isOverpaid && result.creditAmount > 0) {
+        toast.success(
+          `Payment recorded! ₹${result.creditAmount} extra — credited to next month's fee.`,
           { duration: 6000 }
         );
       } else {
@@ -166,15 +174,15 @@ export function RecordPaymentDialog({
   };
 
   const periodLabel = getPeriodLabel();
-  const isStudentHasPartialBalance = partialBalance > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col overflow-hidden" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogHeader className="shrink-0">
           <DialogTitle>Record Payment</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
           <div className="space-y-1.5">
             <Label>Student *</Label>
             <SearchableStudentSelect
@@ -280,7 +288,7 @@ export function RecordPaymentDialog({
                   <span>Net Fee × {monthsToAdd} month{monthsToAdd > 1 ? "s" : ""}:</span>
                   <span>₹{baseAmount.toLocaleString("en-IN")}</span>
                 </div>
-                {isStudentHasPartialBalance && (
+                {partialBalance > 0 && (
                   <div className="flex justify-between text-orange-400 items-center gap-1">
                     <span className="flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
@@ -289,11 +297,22 @@ export function RecordPaymentDialog({
                     <span>+₹{partialBalance.toLocaleString("en-IN")}</span>
                   </div>
                 )}
+                {advanceCredit > 0 && (
+                  <div className="flex justify-between text-emerald-400 items-center gap-1">
+                    <span className="flex items-center gap-1">
+                      <Info className="w-3 h-3" />
+                      Advance credit (from overpayment):
+                    </span>
+                    <span>−₹{advanceCredit.toLocaleString("en-IN")}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-semibold text-foreground border-t border-border pt-1 mt-1">
                   <span>Total Payable:</span>
                   <span>₹{expectedAmount.toLocaleString("en-IN")}</span>
                 </div>
-                <p className="text-muted-foreground/70 text-[11px]">Paying less than total will be recorded as partial.</p>
+                <p className="text-muted-foreground/70 text-[11px]">
+                  Paying less = partial (balance carries to next month). Paying more = credit applied next month.
+                </p>
               </div>
             )}
           </div>
@@ -307,8 +326,9 @@ export function RecordPaymentDialog({
             <Label>Notes</Label>
             <Textarea placeholder="Internal notes..." rows={2} {...register("notes")} />
           </div>
+          </div>{/* end scrollable area */}
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-4 border-t border-border mt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" loading={loading}>Record Payment</Button>
           </DialogFooter>
