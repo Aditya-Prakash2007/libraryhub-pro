@@ -314,3 +314,126 @@ export async function sendSingleFeeReminder(studentId: string) {
   }
 }
 
+
+// Send bulk fee reminders to all PENDING, OVERDUE and PARTIAL students
+// Also sends 7/3/1 day advance reminders for students whose month ends soon
+export async function sendBulkFeeReminders() {
+  try {
+    const libraryId = await getAdminLibraryId();
+    if (!libraryId) return { error: "Unauthorized" };
+
+    const { sendFeeReminderEmail, sendPartialFeeReminderEmail } = await import("@/services/brevo");
+
+    const library = await prisma.library.findUnique({
+      where: { id: libraryId },
+      select: {
+        name: true,
+        settings: { select: { emailNotifications: true, feeReminderDays: true } },
+      },
+    });
+    if (!library) return { error: "Library not found" };
+
+    const emailEnabled = library.settings?.emailNotifications ?? true;
+    if (!emailEnabled) return { error: "Email notifications are disabled in settings" };
+
+    const reminderDays = library.settings?.feeReminderDays ?? [7, 3, 1];
+    const now = new Date();
+
+    // Fetch all active students with fee issues
+    const students = await prisma.student.findMany({
+      where: {
+        libraryId,
+        status: "ACTIVE",
+        paymentStatus: { in: ["PENDING", "OVERDUE", "PARTIAL"] },
+      },
+      include: {
+        user: { select: { email: true } },
+      },
+    });
+
+    let sent = 0;
+    let skipped = 0;
+
+    for (const student of students) {
+      const toEmail = student.user?.email || student.email;
+      if (!toEmail) { skipped++; continue; }
+
+      const baseFee = Math.max(0, student.monthlyFee - (student.discountAmount || 0));
+      const storedDue = student.totalDueAmount ?? 0;
+      const remainingBalance = storedDue > 0 ? storedDue : 0;
+
+      try {
+        if (student.paymentStatus === "PARTIAL") {
+          // Partial: remind about remaining balance
+          const dueDateStr = student.nextDueDate
+            ? student.nextDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+            : "soon";
+          await sendPartialFeeReminderEmail(
+            toEmail,
+            student.fullName,
+            library.name,
+            remainingBalance > 0 ? remainingBalance : baseFee,
+            dueDateStr
+          );
+          sent++;
+        } else if (student.paymentStatus === "PENDING" || student.paymentStatus === "OVERDUE") {
+          // Check if nextDueDate is within reminder window (7, 3, 1 days)
+          let daysLeft = -1;
+          if (student.nextDueDate) {
+            const diff = student.nextDueDate.getTime() - now.getTime();
+            daysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
+          }
+
+          // Send if: overdue (daysLeft < 0), OR within any reminder day window
+          const shouldSend =
+            daysLeft < 0 ||
+            reminderDays.some((d: number) => daysLeft <= d);
+
+          if (!shouldSend) { skipped++; continue; }
+
+          const dueDateStr = student.nextDueDate
+            ? student.nextDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+            : "soon";
+
+          await sendFeeReminderEmail(
+            toEmail,
+            student.fullName,
+            library.name,
+            daysLeft,
+            baseFee + (remainingBalance > 0 ? remainingBalance : 0),
+            dueDateStr
+          );
+          sent++;
+        }
+
+        // Log in-app notification
+        if (student.userId) {
+          await prisma.notification.create({
+            data: {
+              userId: student.userId,
+              studentId: student.id,
+              libraryId,
+              title: student.paymentStatus === "PARTIAL" ? "Partial Payment Reminder" : "Fee Payment Reminder",
+              message:
+                student.paymentStatus === "PARTIAL"
+                  ? `Your last payment was partial. Please pay the remaining ₹${remainingBalance > 0 ? remainingBalance : baseFee} to keep your membership active.`
+                  : `Your fee of ₹${baseFee} is ${student.paymentStatus === "OVERDUE" ? "overdue" : "due soon"}. Please pay on time.`,
+              type: student.paymentStatus === "OVERDUE" ? "FEE_OVERDUE" : "FEE_DUE",
+              channel: "IN_APP",
+              sentAt: now,
+            },
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.error(`[Bulk reminder] Failed for student ${student.id}:`, e);
+        skipped++;
+      }
+    }
+
+    revalidatePath("/admin/notifications");
+    return { success: true, sent, skipped, total: students.length };
+  } catch (error) {
+    console.error("sendBulkFeeReminders error:", error);
+    return { error: "Failed to send bulk reminders" };
+  }
+}

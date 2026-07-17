@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Send, Bell, Megaphone, Clock, CheckCircle2 } from "lucide-react";
+import { Send, Bell, Megaphone, Clock, CheckCircle2, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,12 +17,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { sendNotification, sendFeeReminders } from "@/actions/notifications";
+import { sendBulkFeeReminders } from "@/actions/fees";
 import { notificationSchema } from "@/schemas";
 import type { NotificationFormData } from "@/schemas";
 
 export function AdminNotificationsPage() {
   const [loading, setLoading] = useState(false);
   const [reminderLoading, setReminderLoading] = useState(false);
+  const [bulkReminderLoading, setBulkReminderLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<NotificationFormData>({
@@ -55,6 +57,20 @@ export function AdminNotificationsPage() {
       toast.success(`Fee reminders sent to ${result.sent} students`);
     }
     setReminderLoading(false);
+  };
+
+  const handleBulkEmailReminders = async () => {
+    setBulkReminderLoading(true);
+    const result = await sendBulkFeeReminders();
+    if ("error" in result) {
+      toast.error(result.error);
+    } else {
+      toast.success(
+        `📧 Emails sent to ${result.sent} student(s). ${result.skipped > 0 ? `${result.skipped} skipped (no email).` : ""}`,
+        { duration: 6000 }
+      );
+    }
+    setBulkReminderLoading(false);
   };
 
   return (
@@ -154,6 +170,32 @@ export function AdminNotificationsPage() {
                       loading={reminderLoading}
                     >
                       Send Now
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
+                    <Mail className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-indigo-400">Bulk Email Reminders</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Send fee reminder emails to <strong>all pending, overdue &amp; partial</strong> students at once.
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Partial payments get a separate "balance due" email.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={handleBulkEmailReminders}
+                      loading={bulkReminderLoading}
+                      className="bg-indigo-600 text-white hover:bg-indigo-700 w-full"
+                    >
+                      <Mail className="w-3.5 h-3.5 mr-1.5" />
+                      Send to All Pending
                     </Button>
                   </div>
                 </div>

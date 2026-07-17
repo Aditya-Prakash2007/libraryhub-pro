@@ -355,3 +355,107 @@ export async function sendLibraryApprovalEmail(
     html,
   });
 }
+
+// ─── Feedback Auto-Reply ───────────────────────────────────────────────────
+export async function sendFeedbackAutoReply(
+  to: string,
+  name: string,
+  libraryName: string,
+  feedbackMessage: string
+) {
+  const html = emailWrapper(`
+    <h2 style="color:#111827;margin:0 0 8px;font-size:22px;font-weight:700;">We've Received Your Feedback 💬</h2>
+    <p style="color:#6b7280;font-size:15px;line-height:1.7;margin:0 0 20px;">Hi <strong>${name}</strong>, thank you for sharing your thoughts with <strong>${libraryName}</strong>. We truly value your feedback and our team will review it shortly.</p>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px 24px;margin:20px 0;">
+      <p style="color:#6b7280;font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Your Feedback</p>
+      <p style="color:#374151;font-size:14px;line-height:1.7;margin:0;font-style:italic;">"${feedbackMessage.length > 200 ? feedbackMessage.substring(0, 200) + "…" : feedbackMessage}"</p>
+    </div>
+
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:16px 20px;margin:20px 0;">
+      <p style="color:#1d4ed8;font-size:14px;margin:0;font-weight:500;">📬 What happens next?</p>
+      <p style="color:#3b82f6;font-size:13px;margin:8px 0 0;line-height:1.6;">Our library team will review your message and get back to you if needed. We aim to respond within 24–48 hours.</p>
+    </div>
+
+    <div style="text-align:center;margin:28px 0;">
+      <a href="${APP_URL}/student/feedback" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;">View Your Dashboard</a>
+    </div>
+  `);
+
+  return sendBrevoEmail({
+    to,
+    toName: name,
+    subject: `Feedback Received — ${libraryName}`,
+    html,
+  });
+}
+
+// ─── Feedback Reply from Admin ─────────────────────────────────────────────
+export async function sendFeedbackReplyEmail(
+  to: string,
+  name: string,
+  libraryName: string,
+  originalMessage: string,
+  replyMessage: string
+) {
+  const html = emailWrapper(`
+    <h2 style="color:#111827;margin:0 0 8px;font-size:22px;font-weight:700;">Reply to Your Feedback 💌</h2>
+    <p style="color:#6b7280;font-size:15px;line-height:1.7;margin:0 0 20px;">Hi <strong>${name}</strong>, the team at <strong>${libraryName}</strong> has responded to your feedback.</p>
+
+    <div style="background:#f9fafb;border-left:4px solid #d1d5db;border-radius:0 12px 12px 0;padding:16px 20px;margin:20px 0;">
+      <p style="color:#9ca3af;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Your Original Feedback</p>
+      <p style="color:#6b7280;font-size:13px;line-height:1.7;margin:0;font-style:italic;">"${originalMessage.length > 150 ? originalMessage.substring(0, 150) + "…" : originalMessage}"</p>
+    </div>
+
+    <div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:0 12px 12px 0;padding:16px 20px;margin:20px 0;">
+      <p style="color:#16a34a;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Response from ${libraryName}</p>
+      <p style="color:#374151;font-size:14px;line-height:1.7;margin:0;">${replyMessage}</p>
+    </div>
+
+    <div style="text-align:center;margin:28px 0;">
+      <a href="${APP_URL}/student/feedback" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;">Open Dashboard</a>
+    </div>
+  `, "#22c55e");
+
+  return sendBrevoEmail({
+    to,
+    toName: name,
+    subject: `Reply to Your Feedback — ${libraryName}`,
+    html,
+  });
+}
+
+// ─── Partial Fee Reminder ──────────────────────────────────────────────────
+export async function sendPartialFeeReminderEmail(
+  to: string,
+  name: string,
+  libraryName: string,
+  remainingAmount: number,
+  dueDate: string
+) {
+  const html = emailWrapper(`
+    <h2 style="color:#111827;margin:0 0 8px;font-size:22px;font-weight:700;">⚠️ Partial Payment Pending</h2>
+    <p style="color:#6b7280;font-size:15px;line-height:1.7;margin:0 0 20px;">Hi <strong>${name}</strong>, you have a partial payment pending for your library membership at <strong>${libraryName}</strong>. Please clear the remaining balance to keep your membership active.</p>
+
+    <div style="background:#fafafa;border:1px solid #ebebf0;border-radius:12px;padding:20px;text-align:center;margin:24px 0;">
+      <p style="color:#6b7280;margin:0 0 6px;font-size:13px;">Remaining Balance</p>
+      <p style="color:#f59e0b;font-size:36px;font-weight:800;margin:0;">₹${remainingAmount.toLocaleString("en-IN")}</p>
+      <p style="color:#9ca3af;font-size:13px;margin:8px 0 0;">Due by <strong>${dueDate}</strong></p>
+    </div>
+
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px 20px;margin:20px 0;">
+      <p style="color:#92400e;font-size:13px;margin:0;line-height:1.6;">💡 Your last payment was partially received. Please pay the remaining amount to avoid any disruption to your library access.</p>
+    </div>
+
+    <div style="text-align:center;margin:28px 0;">
+      <a href="${APP_URL}/student/payments" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#d97706);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;">Pay Remaining Amount</a>
+    </div>
+  `, "#f59e0b");
+
+  return sendBrevoEmail({
+    to,
+    toName: name,
+    subject: `Partial Payment Pending — ${libraryName}`,
+    html,
+  });
+}
